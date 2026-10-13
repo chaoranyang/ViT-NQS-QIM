@@ -4,13 +4,13 @@ from dataclasses import dataclass
 class Physics:
     """物理模型超参数(Anderson 杂质模型 + 自然轨道链)"""
 
-    No: int = 2          # 杂质轨道数
-    Nb: int = 3          # 浴槽格点数
-    t: float = 55.0      # 浴槽内部最近邻跃迁强度(hopping)
-    U: float = 11.0      # 同轨道内 ↑↓ 之间的库仑排斥(Hubbard U)
-    J: float = 22.0      # 洪德耦合(Hund's coupling)
-    V: float = 66.0      # 杂质与第一个浴槽格点之间的杂化强度(hybridization)
-    mu: float = 44.0     # 化学势(决定杂质轨道占据数)
+    No: int = 1          # 杂质轨道数
+    Nb: int = 39         # 浴槽格点数
+    t: float = 0.5      # 浴槽内部最近邻跃迁强度(hopping)
+    U: float = 2.0      # 同轨道内 ↑↓ 之间的库仑排斥(Hubbard U)
+    J: float = 0.0      # 洪德耦合(Hund's coupling)
+    V: float = 0.5      # 杂质与第一个浴槽格点之间的杂化强度(hybridization)
+    mu: float = -1.0     # 化学势(决定杂质轨道占据数)
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Net:
 class Train:
     """训练与子空间扩展超参数"""
 
-    NS: int = 256        # 子空间保留的构型数(每轮截断后的大小)
+    NS: int = 1024        # 子空间保留的构型数(每轮截断后的大小)
     max_iter: int = 1000 # 总迭代轮数
     lr_init: float = 1e-1    # 初始学习率(线性衰减起点)
     lr_final: float = 1e-3   # 最终学习率(线性衰减终点)
