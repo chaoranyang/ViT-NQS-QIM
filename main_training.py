@@ -157,6 +157,19 @@ def run_training():
         t=physics.t, V=physics.V,
     )
     print(f"能量轨迹已保存到 energy_record_NS{NS}.npz")
+
+    # ---- 调试+诊断 ----
+    # from diag_post import run_post_diag, probe_fixed_S
+    # d = run_post_diag(model, S, ops, E_REF=E_REF)
+    # print(f"\n[探针] 固定S继续训练,目标 E_exact_S = {d['E_exact_S']:.10f}")
+    # model, E_fix = probe_fixed_S(model, S, ops, iters=200, lr_fix=1e-2, lam_fix=5e-5)
+    # print(f"[探针] 固定S训练后 E = {E_fix:.10f}(对照 {d['E_exact_S']:.10f})")
+    # run_post_diag(model, S, ops, E_REF=E_REF)   # 看新的拆分
+    from diag_post import probe_dynamics, run_post_diag
+    model, S, E = probe_dynamics(model, S, ops, iters=400, lr_fix=1e-2, lam_fix=5e-5)
+    d2 = run_post_diag(model, S, ops, E_REF=E_REF)
+
+
     return S, model
 
 

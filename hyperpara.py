@@ -26,7 +26,7 @@ class Net:
 class Train:
     """训练与子空间扩展超参数"""
 
-    NS: int = 1024        # 子空间保留的构型数(每轮截断后的大小)
+    NS: int = 256        # 子空间保留的构型数(每轮截断后的大小)
     max_iter: int = 1000 # 总迭代轮数
     lr_init: float = 1e-1    # 初始学习率(线性衰减起点)
     lr_final: float = 1e-3   # 最终学习率(线性衰减终点)

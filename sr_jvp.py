@@ -95,8 +95,9 @@ class SrOps:
             # matvec 用稠密 O:与 QGTJacobianDenseT.__matmul__ 一致。
             def matvec(v):
                 return O.T @ (O @ v) + lam * v
-            delta, _ = jax.scipy.sparse.linalg.cg(matvec, f, x0=x0)
-            return delta
+            delta, info = jax.scipy.sparse.linalg.cg(matvec, f, x0=x0)
+            # info: 0 = 达到 tol·‖f‖ 收敛; >0 = 跑满 maxiter 仍未收敛(病态信号)
+            return delta, info
         self.cg_solve = jax.jit(_cg_solve)
 
 
@@ -127,7 +128,7 @@ def compute_eloc(S, Se_idx, logpsi_se):
 # ====================================================================
 # 第 3 部分:SR 更新主函数
 # ====================================================================
-def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
+def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None,lr_override=None, lam_override=None):
     """
     执行一步 SR 参数更新(NetKet 忠实路径:物化 O + 稠密 CG + 更新,无守卫)。
 
@@ -160,6 +161,11 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         p = psi2 / psi2.sum()                     # (NS,) 归一化概率
 
         E = float(np.real(np.sum(p * E_loc)))
+
+        # —— 诊断指标(不改变任何数学) ——
+        w_se = np.exp(2.0 * np.real(np.asarray(logpsi_se)))
+        mass_S = float(psi2.sum() / w_se.sum())          # S 占 Se 的概率质量
+        var_eloc = float(np.sum(p * np.abs(E_loc - E) ** 2))  # 能量方差:精确 GS 处 → 0
         neff = 1.0 / float(np.sum(p**2))          # 有效状态数(分布偏斜度)
         max_eloc = float(np.max(np.abs(E_loc)))
         spread_S = float(-np.min(np.real(logpsi_S)))   # 主循环已 shift(max Re=0)
@@ -185,6 +191,7 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         z = E_loc - E
         y = np.concatenate([np.sqrt(p) * np.real(z), np.sqrt(p) * np.imag(z)])
         f = O_flat.T @ y                          # (P,)
+        f_norm = float(np.linalg.norm(f))         # 力向量范数:健康收敛时持续下降
 
     # ---- 5. 学习率与对角位移线性调度(论文:10⁻¹ → 10⁻³ 与 10⁻¹ → 5×10⁻⁵)----
     progress = it / max(train_cfg.max_iter - 1, 1)
@@ -193,12 +200,20 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         train_cfg.diag_shift_final - train_cfg.diag_shift_init
     ) * progress
 
+    # 探针模式:固定 lr/λ(诊断"平台是否由调度提前结束造成"),None 表示用调度值
+    if lr_override is not None:
+        lr = float(lr_override)
+    if lam_override is not None:
+        lam = float(lam_override)
+
     # ---- 6. 解 (S + λI) x = f:稠密 matvec + 默认容差 + x0 热启动 ----
     with timers.scope("cg"):
         x0 = jnp.asarray(ops.last_delta)
-        delta = np.asarray(ops.cg_solve(
+        delta, cg_info = ops.cg_solve(
             jnp.asarray(O_flat), jnp.asarray(f), lam, x0
-        ))
+        )
+        delta = np.asarray(delta)
+        cg_info = int(np.asarray(cg_info)) if cg_info is not None else -1
         ops.last_delta = delta.copy()
 
     # ---- 7. 监控:只打印,不拦截(NetKet 无守卫)----
@@ -217,10 +232,13 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         warn.append(f"CG残差大")
     if delta_ratio > 10.0:
         warn.append(f"‖δ‖/‖θ‖大")
+    if cg_info > 0:
+        warn.append("CG未收敛")
     flag = ("  ⚠ " + " | ".join(warn)) if warn else ""
     print(f"          [SR] λ={lam:.2e} lr={lr:.2e} N_eff={neff:.1f} "
           f"spread(S)={spread_S:.1f} max|E_loc|={max_eloc:.1f} "
-          f"‖δ‖/‖θ‖={delta_ratio:.2e} resid={resid:.1e}{flag}")
+          f"‖δ‖/‖θ‖={delta_ratio:.2e} resid={resid:.1e}{flag}"
+          f"√Var={var_eloc**0.5:.1e} massS={mass_S:.3f} cg={cg_info}{flag}")
 
     # ---- 8. 参数更新:θ ← θ − η·x(NetKet 原样,无任何拦截)----
     model_new = nnx.merge(ops.graphdef, ops.unravel(vec - lr * delta))
@@ -235,5 +253,9 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         "resid": resid,
         "n_bad_eloc": n_bad_eloc,
         "n_bad_delta": n_bad_delta,
+        "mass_S": mass_S,          # 诊断:子空间覆盖度
+        "var_eloc": var_eloc,      # 诊断:波函数质量(精确 GS 处 → 0)
+        "f_norm": f_norm,          # 诊断:优化是否还在推进
+        "cg_info": cg_info,        # 诊断:CG 是否收敛(0=收敛)
     }
     return model_new, E, info
