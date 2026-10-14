@@ -58,6 +58,7 @@ def run_post_diag(model, S, ops, E_REF, save_spectrum=True):
     lp_S = np.asarray(lp_se)[[Se_idx[s] for s in S]]
     w = np.exp(2.0 * np.real(lp_S))
     p = w / w.sum()
+    # p 是训练结束时，波函数在最终子空间 S 的 256 个构型上的概率分布：p(s) = |ψ(s)|² / Σ_{s'∈S} |ψ(s')|²
     E_th = float(np.real(np.sum(p * E_loc)))
     neff = 1.0 / float(np.sum(p**2))
     mass_S = float(w.sum() / np.sum(np.exp(2.0 * np.real(np.asarray(lp_se)))))
@@ -115,6 +116,8 @@ def run_post_diag(model, S, ops, E_REF, save_spectrum=True):
         print(f"p 谱已保存 p_spectrum_NS{NS}.npz")
         for r in (1, 5, 10, 50, 100, NS // 2, NS):
             print(f"    p(rank {r:5d}) = {ps[r-1]:.3e},  前{r}累计质量 = {ps[:r].sum():.4f}")
+            # 举例：p(rank 256) = 7.5e-9 的意思是：第 256 个"最受重视"的构型，只分到 7.5e-9 的概率质量，
+            # 整个NS=256累计起来为1
     return dict(E_th=E_th, E_exact_S=E_exact_S, dE_ansatz=dE_ansatz,
                 dE_subspace=dE_subspace, fid=fid, neff=neff, mass_S=mass_S)
 

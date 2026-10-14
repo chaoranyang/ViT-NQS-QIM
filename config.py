@@ -92,36 +92,60 @@ def _reference_configs():
     return refs
 
 
-def ini_config(NS=None):
-    """S0:参考构型 + 连通层 BFS 填充(取代原"均匀随机半满"采样)。
+def ini_config(NS=None, seed=42, restart_every=8):
+    """S0 = 参考核心 + 构型图随机游走(受控探索)。
 
-    动机:子空间扩展法依赖"概率支撑集中在参考构型邻域"这一 NO 基物理
-    (论文 Fig.1(a))。从均匀随机半满构型出发,Nb=39 时早期 SR 步长因
-    E_loc 涨落过大而发散;从参考邻域出发,E_loc 涨落从一开始就是物理量级。
+    动机(与论文 Fig.2(a) 的初始误差对照):
+      - 纯 BFS 壳填充太"规整/封闭":ψ 学会把概率集中到前几壳后,
+        截断永远选出同一批构型,子空间冻结(实测 保留=256/256,
+        |Se| 恒定),新构型无法进入,NS 增大不带来收益;
+      - 纯均匀随机半满太"散",早期 E_loc 涨落大(旧版发散教训);
+      - 折中:从 4 个参考构型出发做图上随机游走,每步从 get_conn
+        邻居里随机跳一步,每 restart_every 步从随机参考构型重新出发。
+        得到一张穿过构型空间的"蛛网":物理核心被锚定,同时保留
+        探索通道,给截断动力学留出换血空间。
+      - 论文初始 rel_err ≈ 1.05e-1,略高于我们纯 BFS 的 9.93e-2:
+        "更随机的 S0 → 初始能量略高"与此一致。
 
-    get_conn 返回的邻居不含 s 自身,BFS 的 seen 集合直接用它即可。
+    参数:
+        NS            : 子空间大小
+        seed          : 随机游走种子(可复现)
+        restart_every : 从参考构型重新出发的间隔步数(越小越散)
     """
     if NS is None:
         NS = train.NS
-    # 防御断言:NS 不能超过半满扇区总维度
     max_dim = math.comb(L, L // 2)
     assert NS <= max_dim, (
-        f"NS={NS} 超过半满扇区总维度 C({L},{L//2})={max_dim},BFS 无法完成!"
+        f"NS={NS} 超过半满扇区总维度 C({L},{L//2})={max_dim}!"
     )
-    frontier = _reference_configs()
-    S, seen = [], set(frontier)
-    while frontier and len(S) < NS:
-        nxt = []
-        for s in frontier:
-            if len(S) >= NS:
-                break
-            S.append(s)
-            for sp in get_conn(s):
-                if sp not in seen:
-                    seen.add(sp)
-                    nxt.append(sp)
-        frontier = nxt
-    return S[:NS]
+    from ham_NO import get_conn
+    refs = _reference_configs()
+    rng = random.Random(seed)               # 局部随机实例,不扰动全局种子
+    S, seen = [], set()
+    for r in refs:                          # 参考核心:锚定物理,永不去除
+        S.append(r)
+        seen.add(r)
+
+    cur = rng.choice(refs)
+    steps_since_restart = 0
+    max_steps = 50 * NS                     # 安全阀:防止极端情况下空转
+    it = 0
+    while len(S) < NS and it < max_steps:
+        it += 1
+        if steps_since_restart >= restart_every:
+            cur = rng.choice(refs)
+            steps_since_restart = 0
+        nbrs = get_conn(cur)
+        if not nbrs:                        # 理论上有邻居;防御性兜底
+            cur = rng.choice(refs)
+            steps_since_restart = 0
+            continue
+        cur = rng.choice(nbrs)              # 随机跳一步
+        steps_since_restart += 1
+        if cur not in seen:
+            seen.add(cur)
+            S.append(cur)
+    return S
 
 
 
