@@ -26,9 +26,11 @@ vit_complex.py —— 复数版 ViT 神经量子态前向传播
     5. 【logcosh】用 NetKet 的分支选择公式(全纯、单值、不溢出):
        按 Re(z) 符号把 z 翻到 Re≥0 扇区,再用 z + log1p(exp(-2z)) - log2。
 
-    6. 【读出层】Viteritti 原版式:每 token 经 d→1 线性层投影成标量 → log[cosh] →
-       对 Np 个 token 求和。避免"128 特征逐个 logcosh 求和"带来的初始 logψ
-       大展宽(~38)使 Pθ 单峰化、SR 第一步即病态的问题。
+    6. 【输出头】官方 ViT 波函数输出头(NetKet 教程/Viteritti):
+       先对 patch 池化求和再 LayerNorm,两个独立支路(d→d 混合 + LayerNorm)
+       拼成复数向量,最后对 d 个特征逐元 log[cosh] 求和。
+       与旧 readout 头(4 个 patch 局部项)相比,每个 log_cosh 项看到
+       全部 patch 与全部特征,尾巴表达力更强。
 """
 
 import jax
@@ -150,7 +152,7 @@ class ComplexMultiHeadAttention(nnx.Module):
         #   3. 注意力分数(必须实数) 
         # einsum: b=batch, h=head, n=query位, m=key位, f=特征
         # q·k† 是复数内积,取 .real,再除以 √dk
-        scores = jnp.einsum('bhnf,bhmf->bhnm', q, k.conj()).real / jnp.sqrt(self.dk)
+        scores = jnp.einsum('bhnf,bhmf->bhnm', q, k).real / jnp.sqrt(self.dk)
         # scores: (M, h, Np, Np) 实数 —— 所有 token 两两全连接
 
         attn = jax.nn.softmax(scores, axis=-1)    # (M, h, Np, Np) 实数权重
@@ -230,7 +232,47 @@ class ComplexTransformerBlock(nnx.Module):
         y = y + self.ff2(reim_gelu(self.ff1(self.ln2(y))))   # (M, Np, d)
         return y
 
+# ====================================================================
+# 顶层输出头(版本 C:官方 ViT 波函数 OutputHead,NetKet 教程原文结构)
+# ====================================================================
+class OutputHeadC(nnx.Module):
+    """
+    官方 ViT 波函数输出头(Rende & Viteritti, NetKet ViT 教程):
 
+        z    = LN( Σ_i y_i )                      # 先对 Np 个 patch 池化成 d 维
+        out_r= LN( W_r z + b_r )                  # 实部支路(教程 output_layer0 + norm2)
+        out_i= LN( W_i z + b_i )                  # 虚部支路(教程 output_layer1 + norm3)
+        logψ = Σ_{α=1}^{d} log_cosh( out_r + i·out_i )_α    # d=32 项,不是 4 项
+
+    与旧版 readout 头(版本 A)的结构性差别:
+        - A: 每 patch 先投影成标量再求和 → 每个 log_cosh 项只看一个 patch;
+        - C: 先池化后混合 → 每个 log_cosh 项看到全部 patch 与全部特征
+          (Carleo-Troyer RBM 头,教程注释引 [CS17])。池化后的 LN 使
+          sum 与 mean 池化完全等价(逐行尺度不变),故教程写 sum。
+    """
+    def __init__(self, d: int, *, rngs: nnx.Rngs):
+        self.ln_pool = ComplexLayerNorm(d)               # 池化向量归一化(教程 out_layer_norm)
+        self.dense_r = ComplexDense(d, d, rngs=rngs)     # 实部支路(教程 output_layer0)
+        self.dense_i = ComplexDense(d, d, rngs=rngs)     # 虚部支路(教程 output_layer1)
+        self.ln_r = ComplexLayerNorm(d)                  # 教程 norm2
+        self.ln_i = ComplexLayerNorm(d)                  # 教程 norm3
+
+        # 教程 bias_init=zeros:字面对齐。数学上常数偏置会被后续 LN 的
+        # 均值归零完全吸收,零初始化只是免除浪费。
+        for _n in ("b_re", "b_im"):
+            for _dense in (self.dense_r, self.dense_i):
+                p = getattr(_dense, _n)
+                p.value = jnp.zeros_like(p.value)
+
+    def __call__(self, y):
+        # y: (M, Np, d) 复数,transformer 最终输出
+        z = self.ln_pool(y.sum(axis=1))                  # (M, d) 复数:先池化后归一化
+        out = self.ln_r(self.dense_r(z)) \
+            + 1j * self.ln_i(self.dense_i(z))            # (M, d) 复数:双支路拼装
+        return jnp.sum(log_cosh(out), axis=-1)           # (M,) 复数:32 项 log_cosh 求和
+
+
+    
 # ====================================================================
 # 顶层模块:复数ViT-NQS
 # ====================================================================
@@ -264,12 +306,8 @@ class ViTNQS(nnx.Module):
             [ComplexTransformerBlock(d, h, rngs=rngs) for _ in range(Nl)]
         )
 
-        #   4. 读出层:每个 token 线性投影成标量(d → 1)
-        #      这是 Viteritti et al. (PRL 130, 236401) 原版 ViT 波函数的读出方式:
-        #      先投影成 Np 个标量,再逐 token log[cosh],最后对 Np 个 token 求和。
-        #      若改成"128 个特征逐个 logcosh 再求和",随机初始化下 logψ ~ N(0, 9.6²),
-        #      Pθ 退化为单峰(N_eff≈1),SR 从第一步起就不可解。
-        self.readout = ComplexDense(d, 1, rngs=rngs)
+        #   4. 输出头RBM式
+        self.head = OutputHeadC(d, rngs=rngs)   # 版本 C:官方 RBM 式输出头
         
 
     def __call__(self, x):
@@ -285,13 +323,17 @@ class ViTNQS(nnx.Module):
         for block in self.blocks:
             y = block(y)                      # (M, Np, d) 复数
 
-        #   4. 读出:每 token 标量投影 → log[cosh] → 对 Np 个 token 求和
-        z = self.readout(y)                              # (M, Np, 1) 复数
-        logpsi = jnp.sum(log_cosh(z), axis=(1, 2))       # (M,) 复数,仅 4 项求和,
+        #   4. 输出头(版本 C):池化 → 归一化 → 双支路混合 → 32 项 log_cosh 求和
+        logpsi = self.head(y)                            # (M,) 复数
+        # #   4. log[cosh] + 求平均 → log ψ(s)  
+        # logcosh = log_cosh(y)                 # (M, Np, d) 复数
+        # # 求平均(而非求和):除以 Np*d,logψ 量级 O(1),
+        # # 避免 exp(logψ) 溢出;整体缩放是波函数规范自由度,不改变物理。
+        # logpsi = jnp.mean(logcosh, axis=(1, 2))   # (M,) 复数
+        return logpsi
+        #ViT 输出的psi(s)往往未归一化！在训练脚本里要手动归一化
 
-        # logpsi = jnp.mean(log_cosh(y), axis=(1, 2))       # (M,) 复数
-                                                         
-        return logpsi # 初值展宽 O(1),截断后 N_eff 健康
+    
 
 # ====================================================================
 # 自检:构造模型、前向、参数统计、梯度验证
