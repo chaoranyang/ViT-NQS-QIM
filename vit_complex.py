@@ -173,12 +173,13 @@ def reim_gelu(z):
     """
     GELU 实虚分开作用:
 
-        GELU(z) = GELU(Re z) + i·GELU(Im z)
+        GELU(z) = [GELU(√2 Re z) + i·GELU(√2 Im z)]/√2
 
     该函数非全纯,但由于参数是实数存储,梯度由实、虚两路正常回传,
     不受 Wirtinger 梯度问题影响。
     """
-    return jax.nn.gelu(z.real) + 1j * jax.nn.gelu(z.imag)
+    s = jnp.sqrt(jnp.array(2.0, dtype=z.real.dtype))
+    return jax.nn.gelu(s * z.real) / s + 1j * jax.nn.gelu(s * z.imag) / s
 
 
 # ====================================================================
