@@ -42,6 +42,11 @@ def run_training():
     # S 初始为 NS 个半满构型(大整数列表)。Nb 很小时 ini_config 枚举整个半满扇区,
     # 此时扩展/截断不增删构型,子空间扩展退化为全空间精确求和。
     S = ini_config()
+    # ---- S0 体检:初始构型能量的统计(对照论文 Fig.2 初始 rel_err ≈ 1.05e-1)----
+    from ham_NO import H_act_on
+    diags = sorted(H_act_on(s)[s] for s in S)
+    print(f"S0 体检: 对角能量 min/中位/max = "
+          f"{diags[0]:.4f} / {diags[len(diags)//2]:.4f} / {diags[-1]:.4f}")
 
     model = ViTNQS(d=net.d, h=net.h, Nl=net.Nl, Np=Np, NL=NL, rngs=nnx.Rngs(0))
 
@@ -159,15 +164,16 @@ def run_training():
     print(f"能量轨迹已保存到 energy_record_NS{NS}.npz")
 
     # ---- 调试+诊断 ----
-    # from diag_post import run_post_diag, probe_fixed_S
-    # d = run_post_diag(model, S, ops, E_REF=E_REF)
+    from diag_post import run_post_diag, probe_fixed_S
+    d = run_post_diag(model, S, ops, E_REF=E_REF)
     # print(f"\n[探针] 固定S继续训练,目标 E_exact_S = {d['E_exact_S']:.10f}")
     # model, E_fix = probe_fixed_S(model, S, ops, iters=200, lr_fix=1e-2, lam_fix=5e-5)
     # print(f"[探针] 固定S训练后 E = {E_fix:.10f}(对照 {d['E_exact_S']:.10f})")
     # run_post_diag(model, S, ops, E_REF=E_REF)   # 看新的拆分
-    from diag_post import probe_dynamics, run_post_diag
-    model, S, E = probe_dynamics(model, S, ops, iters=400, lr_fix=1e-2, lam_fix=5e-5)
-    d2 = run_post_diag(model, S, ops, E_REF=E_REF)
+
+    # from diag_post import probe_dynamics, run_post_diag
+    # model, S, E = probe_dynamics(model, S, ops, iters=400, lr_fix=1e-2, lam_fix=5e-5)
+    # d2 = run_post_diag(model, S, ops, E_REF=E_REF)
 
 
     return S, model
