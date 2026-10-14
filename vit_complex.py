@@ -288,6 +288,8 @@ class ViTNQS(nnx.Module):
         #   4. 读出:每 token 标量投影 → log[cosh] → 对 Np 个 token 求和
         z = self.readout(y)                              # (M, Np, 1) 复数
         logpsi = jnp.sum(log_cosh(z), axis=(1, 2))       # (M,) 复数,仅 4 项求和,
+
+        # logpsi = jnp.mean(log_cosh(y), axis=(1, 2))       # (M,) 复数
                                                          
         return logpsi # 初值展宽 O(1),截断后 N_eff 健康
 
