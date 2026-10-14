@@ -59,8 +59,12 @@ def run_post_diag(model, S, ops, E_REF, save_spectrum=True):
     w = np.exp(2.0 * np.real(lp_S))
     p = w / w.sum()
     # p 是训练结束时，波函数在最终子空间 S 的 256 个构型上的概率分布：p(s) = |ψ(s)|² / Σ_{s'∈S} |ψ(s')|²
-    E_th = float(np.real(np.sum(p * E_loc)))
     neff = 1.0 / float(np.sum(p**2))
+    # 有效构型数。含义：如果 p 是"均匀铺在 NS 个构型上"，N_eff = NS；分布越尖，N_eff 越小.
+    # N_eff = 3.2 的意思是：ψ_θ 的分布尖得就像只均匀铺在 3 个构型上
+    
+    E_th = float(np.real(np.sum(p * E_loc)))
+    
     mass_S = float(w.sum() / np.sum(np.exp(2.0 * np.real(np.asarray(lp_se)))))
     var_eloc = float(np.sum(p * np.abs(E_loc - E_th)**2))
 
@@ -81,6 +85,7 @@ def run_post_diag(model, S, ops, E_REF, save_spectrum=True):
     # ---- 3. 保真度 ----
     psi = np.exp(np.real(lp_S)); psi /= np.linalg.norm(psi)
     fid = float(np.abs(np.dot(gs, psi))**2)
+    # 与子空间精确基态差值的1范数（分量数组逐位作差）
     l1 = float(np.sum(np.abs(p - gs**2)))
 
     # ---- 4. O 矩阵的谱(条件数) ----
