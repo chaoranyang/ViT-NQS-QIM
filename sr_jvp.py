@@ -190,7 +190,7 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None,lr_ove
         # 与论文 f_k = Σ p Re[O_k*(E_loc−E)] 等价(中心化交叉项因 Σp(E_loc−E)=0 抵消)
         z = E_loc - E
         y = np.concatenate([np.sqrt(p) * np.real(z), np.sqrt(p) * np.imag(z)])
-        f = O_flat.T @ y                          # (P,)
+        f = 2.0*(O_flat.T @ y)                          # (P,)
         f_norm = float(np.linalg.norm(f))         # 力向量范数:健康收敛时持续下降
 
     # ---- 5. 学习率与对角位移线性调度(论文:10⁻¹ → 10⁻³ 与 10⁻¹ → 5×10⁻⁵)----
