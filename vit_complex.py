@@ -36,7 +36,13 @@ vit_complex.py —— 复数版 ViT 神经量子态前向传播
 import jax
 import jax.numpy as jnp
 from flax import nnx
-
+# ====================================================================
+# 初始化尺度扫描旋钮(论文未写明的实现细节):
+#   只乘在权重抽签之后,不消耗随机流 → 同一组初始"基因"只改整体幅度,
+#   不同 INIT_SCALE 之间的对比是纯因果的,单次运行即可判定。
+#   V2 的实验已证明该轴敏感:1.26× 会使 256 崩坏。
+# ====================================================================
+INIT_SCALE = 0.5     # 实验时改这里:{0.5, 0.75, 1.26, 1.5}
 
 # ====================================================================
 # 基础模块 1:复数线性层 ComplexDense
@@ -57,14 +63,14 @@ class ComplexDense(nnx.Module):
         sigma = jnp.sqrt(2.0 / (din + dout))
 
         k = rngs.params()
-        self.W_re = nnx.Param(jax.random.normal(k, (din, dout)) * (sigma / jnp.sqrt(2.0)))
+        self.W_re = nnx.Param(jax.random.normal(k, (din, dout)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
         k = rngs.params()
-        self.W_im = nnx.Param(jax.random.normal(k, (din, dout)) * (sigma / jnp.sqrt(2.0)))
+        self.W_im = nnx.Param(jax.random.normal(k, (din, dout)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
 
         k = rngs.params()
-        self.b_re = nnx.Param(jax.random.normal(k, (dout,)) * (sigma / jnp.sqrt(2.0)))
+        self.b_re = nnx.Param(jax.random.normal(k, (dout,)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
         k = rngs.params()
-        self.b_im = nnx.Param(jax.random.normal(k, (dout,)) * (sigma / jnp.sqrt(2.0)))
+        self.b_im = nnx.Param(jax.random.normal(k, (dout,)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
 
     def __call__(self, x):
         # 输入 x:(..., din),实数(首层图片)或复数(后续层)
