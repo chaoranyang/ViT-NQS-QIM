@@ -92,7 +92,7 @@ def _reference_configs():
     return refs
 
 
-def ini_config(NS=None, seed=42, restart_every=8):
+def ini_config(NS=None, seed=42, restart_every=126):
     """S0 = 参考核心 + 构型图随机游走(受控探索)。
 
     动机(与论文 Fig.2(a) 的初始误差对照):
