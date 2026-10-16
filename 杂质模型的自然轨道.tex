@@ -1,0 +1,2267 @@
+\documentclass[11pt]{ctexart}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.4em}
+\newtheorem{thm}{定理}[section]
+\title{笔记：关于杂质模型的自然轨道基}
+\author{Chaoran Yang}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+
+\medskip
+\section{杂质模型、构型空间与单粒子子空间}
+
+\subsection{链几何杂质模型}
+
+多轨道 Anderson 杂质模型，在链几何（chain geometry）下的哈密顿量为：
+\[
+\hat H=\hat H_{\mathrm{loc}}+\hat H_{\mathrm{bath}}+\hat H_{\mathrm{hyb}},
+\]
+
+先声明\textbf{贯穿全篇的记号}：记号$\alpha=(m,\sigma)$表示一个自旋-轨道，$m\in\{0,\dots,N_o-1\}$ 为轨道，共有$N_o$个；$\sigma\in\{0,1\}$ 为自旋上和下；$\mathrm{site}\in\{0,\dots,N_b\}$，其中 $0$ 是杂质位点，$1,\dots,N_b$ 是浴链位点，共$N_b+1个$；总单粒子模式数$L=2N_o(N_b+1)$，编号从零开始以适配数值计算。
+
+算符$\hat H_{\mathrm{loc}}$ 是杂质位点（$\mathrm{site}=0$）上的在位能与Kanamori相互作用项，它是产生/湮灭算符的四阶项，\textbf{故后面记作}$\hat{H}_{\mathrm{four}}$，它跨 $\alpha$ 耦合，但只作用在 $\mathrm{site}=0$ 上。
+
+$\hat H_{\mathrm{bath}}$ 与 $\hat H_{\mathrm{hyb}}$ 对每个 $\alpha$独立地给出一条格点链 $0-1-2-...-N_b$，它只有格点间最近邻跳跃（设为 $t$），不同 $\alpha$ 之间没有 hopping。它是产生/湮灭算符的二阶项，每次只操作搬运一个粒子，\textbf{故后面记作}$\hat{H}_{\mathrm{one}}$（微妙的地方，不因它是二阶项而记作$\mathrm{two}$）。
+
+
+\subsection{构型与 idx 约定}
+
+一个费米子可处于的状态由量子数三元组 $(m,\sigma,\mathrm{site})$ 标记（$m$ 轨道 $0$ 到 $N_o-1$，$\sigma$ 自旋 $0$ 和 $1$，第 $\mathrm{site}$ 格点$0$ 到 $N_b$），那么
+多体构型是每个模式上的占据数序列：
+\[
+|\,n_{(0,0,0)},\,n_{(0,0,1)},\,\dots,\,n_{(0,0,N_b)}
+;\ n_{(0,1,0)},\,\dots,\,n_{(0,1,N_b)}
+;\ \cdots\
+;\ n_{(N_o-1,1,0)},\,\dots,\,n_{(N_o-1,1,N_b)}\,\rangle,
+\]
+由于泡利不相容原理，每个$n_{(m,\sigma,\mathrm{site})}$取值为$0$或$1$。
+
+我们可以构造一个位置索引 $\mathrm{idx}=\mathrm{site}+(2m+\sigma)(N_b+1)$ 把一个状态的量子数映射为其在构型串里的位置编号。在这种索引下，构型串和一个无自旋、无轨道一维费米子格点链占据表象等价，
+\[
+|\,n_{\mathrm{idx}=0},\ n_{\mathrm{idx}=2},\ \dots,\ n_{\mathrm{idx}=L-1}\,\rangle,
+\qquad L=2N_o(N_b+1).
+\]
+
+可以用$N_b=7,\ N_o=2$ 的 32 位串来举例，此时 $L=2\cdot 2\cdot 8=32$，共有 $2N_o=4$ 个 $\alpha$ 段，每段 $8$ 位：
+\[
+|\,\underbrace{10000001}_{\alpha=(0,0)}\;
+ \underbrace{10001001}_{\alpha=(0,1)}\;
+ \underbrace{01000000}_{\alpha=(1,0)}\;
+ \underbrace{00011000}_{\alpha=(1,1)}\,\rangle,
+\]
+\[
+\alpha=(0,0):\ \mathrm{idx}=0,\dots,7 \qquad
+\alpha=(0,1):\ \mathrm{idx}=8,\dots,15
+\]
+\[
+\alpha=(1,0):\ \mathrm{idx}=16,\dots,23 \qquad
+\alpha=(1,1):\ \mathrm{idx}=24,\dots,31 .
+\]
+
+各段电子数依次为 $(2,3,1,2)$，总数 $M=8$。大括号标出的正是每个 $\alpha$ 段：
+\textbf{段内} 是 $\mathrm{site}=0$ 到 $7$ 的 8 位，\textbf{段间} 互不混合。
+验证几个映射：$n_{(0,0,0)}$ 是串的第 $1$ 位（$\mathrm{idx}=0$），值为 $1$；
+$n_{(1,0,1)}$ 对应 $\mathrm{idx}=1+16=17$，即第 $18$ 位，值为 $1$；
+$n_{(1,1,3)}$ 对应 $\mathrm{idx}=3+24=27$，即第 $28$ 位，值为 $1$。
+均与 32 位串一致。
+
+\subsection{Fock 空间的两种分解}
+
+\subsubsection{第一种：按总粒子数直和}
+
+全局 Fock 空间可表示为不同占据数子空间的直和，其中 $\mathcal{H}_n$ 是系统填充$n$个粒子的希尔伯特空间（$\mathcal{H}_0$ 是真空）：
+\begin{equation*}    \mathcal{F}=\mathcal{H}_0\oplus\mathcal{H}_1\oplus\mathcal{H}_2\oplus\cdots\oplus\mathcal{H}_L,
+\end{equation*}
+对于$\mathcal{H}_n$，$L$位的构型里选出$n$位填入$1$，剩下的位置$0$得到的集合即为它的表象（完备正交归一基），立即得到
+\[
+\dim\mathcal{H}_n=C_L^n,\qquad
+\sum_{n=0}^{L}\dim\mathcal{H}_n=2^L=\dim\mathcal{F}.
+\]
+
+\subsubsection{第二种：按 $\alpha$ 模式张量积}
+在量子多体物理的模式视角下，每一个构型可以拆分为不同 $\alpha$ 模式的张量积：
+\[
+|n_{(\alpha_1,0)}\dots n_{(\alpha_1,N_b)}
+;\ n_{(\alpha_2,0)}\dots n_{(\alpha_2,N_b)}
+;\ \cdots\
+;\ n_{(\alpha_{2N_o},0)}\dots n_{(\alpha_{2N_o},N_b)}\,\rangle=\bigotimes_{\alpha=1}^{2N_o}|n_{(\alpha,0)}\dots n_{(\alpha,N_b)}\rangle
+\]
+每个$\alpha$ 段还可以拆到有最小单粒子模式张量积起来，但那没必要了；所有的
+$|\,n_{(\alpha,0)}\cdots n_{(\alpha,N_b)}\,\rangle$ 张成一个空间，即
+$\mathcal{F}_\alpha$，于是 $\mathcal{F}=\bigotimes_\alpha\mathcal{F}_\alpha$。
+每个 $\mathcal{F}_\alpha$ 里的构型占据数从 $0$ 一直到 $N_b+1$，
+它可以写成
+\begin{equation*}
+    \mathcal{F}_\alpha=\mathrm{Span}\left\{|\mathrm{vac}\rangle,\ \underbrace{|\cdots1\cdots\rangle}_{\text{所有填 1 个的 }},\
+    \underbrace{|\cdots1\cdots1\cdots\rangle}_{\text{所有填 2 个的 }},\cdots,
+    \underbrace{|111\cdots1\rangle}_{\text{填 } N_b+1 \text{ 个（全满）}}\right\}
+\end{equation*}
+而每个填充数 $n$ 都张成一个子空间 $\tilde{\mathcal{H}}_n^\alpha$，于是
+$\mathcal{F}_\alpha=\bigoplus_{n=0}^{N_b+1}\tilde{\mathcal{H}}_n^\alpha$。
+
+以 $N_b=7$ 为例，块 $\alpha$ 的构型是 8 位串，共 $2^8=256$ 个，
+\[
+\mathcal{F}_\alpha=\tilde{\mathcal{H}}_0^\alpha\oplus\tilde{\mathcal{H}}_1^\alpha
+\oplus\cdots\oplus\tilde{\mathcal{H}}_8^\alpha,
+\]
+各扇区维度为
+\[
+C_8^0,\,C_8^1,\,C_8^2,\,C_8^3,\,C_8^4,\,C_8^5,\,C_8^6,\,C_8^7,\,C_8^8
+=1,\,8,\,28,\,56,\,70,\,56,\,28,\,8,\,1.
+\]
+例如 $|10000000\rangle\in\tilde{\mathcal{H}}_1^\alpha$，
+$|10001001\rangle\in\tilde{\mathcal{H}}_3^\alpha$，
+$|11111111\rangle\in\tilde{\mathcal{H}}_8^\alpha$。
+
+张量积分解的维度核对（$N_b=7,N_o=2$）：
+\[
+\dim\mathcal{F}=\prod_\alpha\dim\mathcal{F}_\alpha
+=256^4=2^{32}=4\,294\,967\,296,
+\]
+与 $\sum_n C_{32}^n=2^{32}$ 一致。
+
+\subsubsection{同构 $\tilde{\mathcal{H}}_1^\alpha\cong\mathcal{H}_1^\alpha$}
+
+在第一种分解里，全局单粒子空间 $\mathcal{H}_1$ 本身又可按 $\alpha$ 直和分解：
+\[
+\mathcal{H}_1=\bigoplus_\alpha\mathcal{H}_1^\alpha,
+\]
+其中 $\mathcal{H}_1^\alpha=\mathrm{Span}\{\text{全局串中唯一的 1 落在 }\alpha\text{ 段}\}$，而$\alpha$段又有$N_b+1$个格点，这有$C_{N_b+1}^1$中选法，故$\dim\mathcal{H}_1^\alpha=N_b+1$。
+它与块内单粒子扇区 $\tilde{\mathcal{H}}_1^\alpha$之间的同构是显式的：
+\[
+|\text{块 } \alpha \text{ 内恰有一个 1 的串}\rangle \in \tilde{\mathcal{H}}_1^\alpha
+\longleftrightarrow
+\Big(\bigotimes_{\beta\neq\alpha}|\mathrm{vac}\rangle_\beta\Big)
+\otimes |\text{该块内串}\rangle\in \mathcal{H}_1^\alpha,
+\]
+\[
+|0100\rangle\longleftrightarrow|0000 \underbrace{0100}_\alpha 0000 \,0000\rangle
+\]
+上面举例了$N_o=2,N_b=3$的某个单粒子占据。这是保持内积的一一映射，
+所以两者可以等同看待。后文在 $\mathcal{H}_1^\alpha$ （全局单粒子空间的$\alpha$块）里做的一切基变换，
+也就\textbf{等价于}在 $\tilde{\mathcal{H}}_1^\alpha$（$\mathcal{F}_\alpha$ 的单粒子扇区）里做，\textbf{后面将不区分二者}，统一用不带tilde的记号表示。
+
+
+
+\subsection{M 粒子Hilbert空间的分布划分}
+
+实际的物理系统会有固定的总粒子数 $M$（比如半满或者分数填充）。结合第二节的两种分解，$M$ 粒子子空间可以写成
+\[
+\mathcal{H}_M^{\mathrm{tot}}
+=
+\bigoplus_{\{n_\alpha:\,\sum_\alpha n_\alpha=M\}}
+\ \bigotimes_\alpha \tilde{\mathcal{H}}_{n_\alpha}^\alpha .
+\]
+含义分三步：
+
+\begin{enumerate}
+\item 选定一组\textbf{粒子数分布}
+$(n_1,n_2,\dots,n_{2N_o})$，满足 $\sum_\alpha n_\alpha=M$；
+\item 该分布对应一个子空间 $\bigotimes_\alpha\tilde{\mathcal{H}}_{n_\alpha}^\alpha$，
+其中每个块 $\alpha$ 恰好放 $n_\alpha$ 个电子；
+\item 不同分布之间\textbf{正交}（至少有一个块的电子数不同，两个全局串必然不同），
+所有分布的直和穷尽了全部 $C_L^M$ 个构型——即\textbf{完整划分}了
+$\mathcal{H}_M^{\mathrm{tot}}$。
+\end{enumerate}
+
+\textbf{维度核对（推广的 Vandermonde 恒等式）}：
+\[
+\sum_{\{n_\alpha:\,\sum n_\alpha=M\}}
+\prod_\alpha C_{N_b+1}^{n_\alpha}
+=
+C_{2N_o(N_b+1)}^{M}
+=
+C_L^{M}.
+\]
+组合解释：从 $2N_o$ 组、每组 $N_b+1$ 个模式中挑 $M$ 个，
+按"每组挑几个"分类求和。
+
+\textbf{实例}（$L=32,\ M=8$）：
+\[
+C_{32}^{8}=10\,518\,300,
+\]
+可能的分布数等于 4 元组 $(n_1,n_2,n_3,n_4)$ 满足 $n_1+n_2+n_3+n_4=8$ 的个数，
+即 $C_{11}^{3}=165$ 个。第一节的示例构型属于分布 $(2,3,1,2)$，该子空间的维度是
+\[
+C_8^2\cdot C_8^3\cdot C_8^1\cdot C_8^2
+=28\cdot 56\cdot 8\cdot 28=351\,232 .
+\]
+
+\medskip
+\noindent\textbf{前瞻}：单体哈密顿量 $\hat H_{\mathrm{one}}$ 不跨 $\alpha$ 搬运电子，
+\textbf{保持每一个分布子空间}（在分布划分下分块对角）；
+四体 Kanamori 项跨 $\alpha$ 作用，在分布之间搬运电子。这一对性质
+是"参考基态可以按块因子化、而真实基态存在跨块纠缠"的根源，
+后面的构造将反复用到。
+
+\section{主战场：单粒子子空间 $\mathcal{H}_1=\bigoplus_\alpha\mathcal{H}_1^\alpha$}
+
+\subsection{为什么单粒子子空间是主战场}
+
+多体空间的全部基矢都由产生算符搭出来：
+\[
+|s\rangle=(c_1^\dagger)^{n_1}(c_2^\dagger)^{n_2}\cdots(c_L^\dagger)^{n_L}|0\rangle,
+\]
+而产生/湮灭算符由单粒子子空间的基矢与真空态定义：
+\[
+|i\rangle=c_i^\dagger|0\rangle,
+\qquad
+\{|i\rangle\}=\text{单粒子子空间 }\mathcal{H}_1\text{ 的正交归一基}.
+\]
+因此\textbf{单粒子基变换 $\Leftrightarrow$ 新产生/湮灭算符 $\Leftrightarrow$ 重写整个多体空间}。
+具体地，若在（某个块 $\alpha$ 的）单粒子子空间里做基变换
+\[
+|q_g\rangle=\sum_i U_{ig}\,|i\rangle,
+\qquad \text{即}\qquad
+c_i=\sum_g U_{ig}\,q_g,
+\]
+（$U$ 的每一列是新基在旧基下的分量，$U$ 是酉矩阵）则新算符为
+\[
+q_g^\dagger=\sum_i U_{ig}\,c_i^\dagger,
+\qquad
+q_g=\sum_i U_{ig}^*\,c_i .
+\]
+反过来，旧算符按 $c_i^\dagger=\sum_g U_{ig}^*\,q_g^\dagger$ 用新算符表出。
+
+\subsection{本笔记的任务书}
+
+后续全部构造都是\textbf{在 $\mathcal{H}_1^\alpha$ 内部}（对每个 $\alpha$ 独立进行）
+把原始格点基
+\[
+\big\{\,|0\rangle,\ |1\rangle,\ \dots,\ |N_b\rangle\,\big\}
+\qquad(\text{即 } |1000\cdots\rangle,\,|0100\cdots\rangle,\,\dots\,)
+\]
+变换为\textbf{自然轨道基}
+\[
+\big\{\,|0\rangle,\ |b\rangle,\ |d_1\rangle,\dots,|d_{N_d}\rangle,\
+|v_1\rangle,\dots,|v_{N_v}\rangle\,\big\},
+\]
+其中 $|0\rangle$ 是杂质方向（\textbf{全程冻结不动}），$|b\rangle$ 是活性轨道，
+$d$ 链是导带（几乎全空），$v$ 链是价带（几乎全满），
+$N_d=N_b-n,\ N_v=n-1$（$n$ 为块内电子数）。
+
+与之同步，单粒子哈密顿量矩阵 $h^\alpha$（在原始 site 基下的三对角矩阵）
+作相似变换
+\[
+h'^{\alpha}=U^{\dagger}h^{\alpha}U,
+\]
+目标形状为
+\[
+h'^{\alpha}
+=
+\begin{pmatrix}
+h_{0b} & T_{0v} & T_{0d}\\[2pt]
+T_{0v}^\dagger & T_v & 0\\[2pt]
+T_{0d}^\dagger & 0 & T_d
+\end{pmatrix},
+\]
+其中：
+\begin{itemize}
+\item $h_{0b}$：$2\times2$ 的杂质--活性块（含 $\mu,\epsilon_b,t_{0b}$）；
+\item $T_v$、$T_d$：价带链、导带链的三对角块（只有对角与次对角元）；
+\item $T_{0v}$、$T_{0d}$：只有\textbf{第一列}非零的 $2\times N_v$、$2\times N_d$ 块，
+即杂质与活性只连两条链的链头 $v_1$、$d_1$；
+\item 零块：$v$ 链与 $d$ 链完全解耦。
+\end{itemize}
+
+全局变换是各块并排的分块对角矩阵
+$U=\bigoplus_\alpha\big(1\oplus U^\alpha_{\mathrm{bath}}\big)$：
+杂质逐块冻结，只转浴。$h'^{\alpha}$ 一旦建成，
+新哈密顿量 $\hat H_{\mathrm{one}}^{(\alpha)}$ 随之写成
+$\mu\,c_0^\dagger c_0+\epsilon_b\,b^\dagger b+t_{0b}(c_0^\dagger b+\mathrm{h.c.})
++\cdots+\sum_j t_{d_j}(d_j^\dagger d_{j+1}+\mathrm{h.c.})
++\sum_j t_{v_j}(v_j^\dagger v_{j+1}+\mathrm{h.c.})$ 的形式，
+而 Kanamori 四体项因杂质冻结而\textbf{逐字不变}。
+
+\subsection{算符记号一览}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+记号 & 含义\\
+\midrule
+$c_{\alpha,\mathrm{site}}$ & 原始链（格点）基算符，仅用于旧基\\
+$f_{\alpha,k}$ & 能量本征模式（对角化 $h^\alpha$ 得到）\\
+$q_g$ & 一般的新基算符\\
+$b,\ d_j,\ v_j$ & 自然轨道基：活性、导带链、价带链\\
+$e,\ e'$ & 成键、反键组合（中途装置）\\
+$\rho$ & 单粒子密度（矩阵）\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{第二部分：参考态、全局基态的块结构与单粒子密度矩阵}
+
+\noindent 本部分回答三个问题：
+\begin{enumerate}
+\item 单体哈密顿量 $\hat H_{\mathrm{one}}$ 的块结构，以及它的全局基态为何能按
+$\alpha$ 块因子化（张量积）；
+\item 用\textbf{全局}基态定义的单粒子密度矩阵 $\rho$，为何精确地分块对角，
+且每块只依赖本块的费米海；
+\item $\hat\rho^\alpha$ 与单体矩阵 $\hat h^\alpha$ 共享同一组不变子空间
+$S$ 与 $S^{\perp}$——这一共享是后续成键/反键耦合清零的全部秘密。
+\end{enumerate}
+
+\medskip
+\noindent\textbf{记号}：沿用第一部分。单粒子模式 $\alpha=(m,\sigma)$，
+$\mathrm{site}=0$ 是杂质，$1,\dots,N_b$ 是浴链位点。
+块 $\alpha$ 的单粒子空间 $\mathcal{H}_1^\alpha=\mathrm{Span}\{|0\rangle,\dots,|N_b\rangle\}$
+（$N_b+1$ 维）；块 $\alpha$ 的多体空间
+$\mathcal{F}_\alpha=\bigoplus_{n=0}^{N_b+1}\tilde{\mathcal{H}}_n^\alpha$。
+总粒子数 $M$，块内粒子数 $n_\alpha$，$\sum_\alpha n_\alpha=M$。
+
+\subsection{一、单体哈密顿量的块结构与参考基态}
+
+\textbf{（1）拆解：四体项全程不动。}
+总哈密顿量
+\[
+\hat H=\hat H_{\mathrm{four}}+\hat H_{\mathrm{one}}.
+\]
+$\hat H_{\mathrm{four}}$ 是 Kanamori 四体项，只由杂质算符 $c_{0,m,\sigma}$ 写成，
+它不能写成单粒子矩阵。本部分（以及后续全部基变换）\textbf{不触碰它}，只研究单体部分
+\[
+\hat H_{\mathrm{one}}=\sum_{\alpha}\hat H_{\mathrm{one}}^{\alpha}.
+\]
+由 S1 的链几何设定，每个 $\alpha$ 独立地贡献一条链，单体项写作
+\[
+\hat H_{\mathrm{one}}^{\alpha}
+=
+\sum_{i=0}^{N_b}\epsilon_i^{\alpha}\,c_{i,\alpha}^{\dagger}c_{i,\alpha}
++\sum_{i=0}^{N_b-1}t^{\alpha}_i\Big(c_{i,\alpha}^{\dagger}c_{i+1,\alpha}
++c_{i+1,\alpha}^{\dagger}c_{i,\alpha}\Big),
+\]
+其中 $\epsilon_0^{\alpha}=\mu$（杂质 onsite 能），$\epsilon_i^{\alpha}$ 是浴位点 onsite 能
+（S1 中取 $0$），$t^{\alpha}_i$ 是最近邻 hopping（S1 中取常数 $t$，$D=2t$）。
+
+\textbf{（2）块对角性：$\hat h^\alpha$ 在 $\mathcal{H}_1^\alpha$ 上封闭。}
+$\hat H_{\mathrm{one}}^{\alpha}$ 里的每个算符都带同一个 $\alpha$ 指标。
+它作用在任意单粒子基矢上：
+
+\begin{itemize}
+\item 若作用在 $\mathcal{H}_1^\alpha$ 的基矢 $|i\rangle=c_{i,\alpha}^{\dagger}|\mathrm{vac}\rangle$ 上，
+结果仍是 $\mathcal{H}_1^\alpha$ 内基矢的组合：
+\[
+\hat H_{\mathrm{one}}^{\alpha}|i\rangle
+=
+\epsilon_i^{\alpha}|i\rangle
++t_{i-1}^{\alpha}|i-1\rangle
++t_i^{\alpha}|i+1\rangle\in\mathcal{H}_1^\alpha .
+\]
+\item 若作用在其他块 $\beta\neq\alpha$ 的基矢上，算符不匹配任何指标，结果为零。
+\end{itemize}
+
+因此 $\hat H_{\mathrm{one}}^{\alpha}$ 在 $\mathcal{H}_1^\alpha$ 上诱导出（或者说限制为）一个
+$(N_b+1)\times(N_b+1)$ 的矩阵 $h^\alpha$，矩阵元
+\[
+h^\alpha_{ij}=\langle i|\hat H_{\mathrm{one}}^{\alpha}|j\rangle,\qquad i,j=0,\dots,N_b,
+\]
+其显式形式是链的三对角矩阵：
+\[
+h^\alpha=
+\begin{pmatrix}
+\mu & t_0^{\alpha} & 0 & \cdots & 0\\
+t_0^{\alpha} & \epsilon_1^{\alpha} & t_1^{\alpha} & \cdots & 0\\
+0 & t_1^{\alpha} & \epsilon_2^{\alpha} & \ddots & \vdots\\
+\vdots & \vdots & \ddots & \ddots & t_{N_b-1}^{\alpha}\\
+0 & 0 & \cdots & t_{N_b-1}^{\alpha} & \epsilon_{N_b}^{\alpha}
+\end{pmatrix}.
+\]
+在 idx 约定下，全局单粒子矩阵 $h$（$L\times L$）是各块并排的分块对角阵：
+\[
+h=\bigoplus_{\alpha}h^\alpha .
+\]
+这就是"对 $\mathcal{H}_1^\alpha$ 封闭"的含义：$h^\alpha$ 把 $\mathcal{H}_1^\alpha$ 映回自身，
+且以其余块的子空间为零空间。
+
+\textbf{（3）块费米海：$\hat H_{\mathrm{one}}^{\alpha}$ 的块内基态。}
+对块 $\alpha$ 的矩阵 $h^\alpha$ 做谱分解：
+\[
+h^\alpha=\sum_{k=0}^{N_b}\varepsilon_k^{\alpha}\,|u_k\rangle\langle u_k|,
+\]
+其中 $|u_k\rangle\in\mathcal{H}_1^\alpha$ 是能量本征模式，共 $N_b+1$ 个。
+设第 $k$ 个模式在格点 $i$ 上的分量为
+\[
+|u_k\rangle=\sum_{i=0}^{N_b}w_{k,i}^{\alpha}\,|i\rangle,
+\qquad w_{k,i}^{\alpha}=\langle i|u_k\rangle .
+\]
+定义能量本征模式的湮灭算符
+\[
+f_{k,\alpha}=\sum_{i=0}^{N_b}w_{k,i}^{\alpha\,*}\,c_{i,\alpha},
+\qquad
+c_{i,\alpha}=\sum_{k=0}^{N_b}w_{k,i}^{\alpha}\,f_{k,\alpha},
+\]
+（反解由 $\{w_{k,i}^{\alpha}\}$ 组成酉矩阵保证）则
+\[
+\hat H_{\mathrm{one}}^{\alpha}
+=\sum_{k=0}^{N_b}\varepsilon_k^{\alpha}\,f_{k,\alpha}^{\dagger}f_{k,\alpha}.
+\]
+块 $\alpha$ 填 $n_\alpha$ 个电子时，块内基态是\textbf{费米海}：
+\[
+|\Phi_0^{\alpha}\rangle
+=\prod_{k\in\mathrm{occ}_\alpha}f_{k,\alpha}^{\dagger}|\mathrm{vac}\rangle_\alpha
+\in\tilde{\mathcal{H}}_{n_\alpha}^\alpha ,
+\]
+其中 $\mathrm{occ}_\alpha$ 是块 $\alpha$ 内能量最低的 $n_\alpha$ 个模式的集合。
+它是 $\hat H_{\mathrm{one}}^{\alpha}$ 在 $\tilde{\mathcal{H}}_{n_\alpha}^\alpha$ 扇区内的基态：
+\[
+\hat H_{\mathrm{one}}^{\alpha}|\Phi_0^{\alpha}\rangle
+=E_0^{\alpha}|\Phi_0^{\alpha}\rangle,
+\qquad
+E_0^{\alpha}=\sum_{k\in\mathrm{occ}_\alpha}\varepsilon_k^{\alpha} .
+\]
+
+\textbf{（4）全局基态的张量积定理。}
+
+\begin{thm}[张量积定理]
+设 $\hat H_{\mathrm{one}}=\sum_\alpha\hat H_{\mathrm{one}}^{\alpha}$，
+各项只作用在自己的块上。若对每个 $\alpha$，
+$|\Phi_0^{\alpha}\rangle$ 是 $\hat H_{\mathrm{one}}^{\alpha}$ 在
+$\tilde{\mathcal{H}}_{n_\alpha}^\alpha$ 扇区内的基态，则
+\[
+|\Phi_0\rangle=\bigotimes_\alpha|\Phi_0^{\alpha}\rangle
+\]
+是 $\hat H_{\mathrm{one}}$ 在分布子空间
+$\bigotimes_\alpha\tilde{\mathcal{H}}_{n_\alpha}^\alpha$ 内的基态；
+若 $\{n_\alpha\}$ 是全局最优分布，则 $|\Phi_0\rangle$ 是全局基态。
+\end{thm}
+
+\begin{proof}
+先证是本征矢。$\hat H_{\mathrm{one}}^{\alpha}$ 只含块 $\alpha$ 的算符，
+对张量积态中其他块的因子\textbf{恒等}作用，故
+\[
+\hat H_{\mathrm{one}}^{\alpha}\Big(\bigotimes_\beta|\Phi_0^{\beta}\rangle\Big)
+=
+E_0^{\alpha}\Big(\bigotimes_\beta|\Phi_0^{\beta}\rangle\Big).
+\]
+对 $\alpha$ 求和：
+\[
+\Big(\sum_\alpha\hat H_{\mathrm{one}}^{\alpha}\Big)
+\Big(\bigotimes_\beta|\Phi_0^{\beta}\rangle\Big)
+=
+\Big(\sum_\alpha E_0^{\alpha}\Big)
+\Big(\bigotimes_\beta|\Phi_0^{\beta}\rangle\Big).
+\]
+再证是扇区内基态。分布子空间 $\bigotimes_\alpha\tilde{\mathcal{H}}_{n_\alpha}^\alpha$
+里，$\hat H_{\mathrm{one}}$ 是"各块独立作用"的算符之和，它的本征基由各块本征基的张量积构成，
+本征能量是各块能量之和。因此该扇区内最低能量恰为 $\sum_\alpha E_0^{\alpha}$，
+即张量积态取得。最后，遍历所有分布 $\{n_\alpha:\sum n_\alpha=M\}$ 取能量最低者，
+即得全局基态。
+\end{proof}
+
+\textbf{（5）$n_\alpha$ 的确定与实例。}
+
+确定算法：把全部块的能量本征值 $\varepsilon_k^{\alpha}$
+（$k=0,\dots,N_b$，$\alpha$ 遍历 $2N_o$ 个取值）合并成一个大小为 $L$ 的列表，
+按能量从小到大排序，取最低 $M$ 个；块 $\alpha$ 的 $n_\alpha$ 即该块被取中的个数。
+这自动保证 $\sum_\alpha n_\alpha=M$。
+
+实例（$N_b=7,\ N_o=2$，$L=32$，取 $t=1$）。每块的链都是 8 格点紧束缚链，能级为
+\[
+\varepsilon_k=2\cos\frac{k\pi}{9},\qquad k=1,\dots,8 ,
+\]
+具体数值见表~\ref{tab:levels}。四个块的能谱完全相同。
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ccccccccc}
+\toprule
+$k$ & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8\\
+\midrule
+$\varepsilon_k$ & $1.879$ & $1.532$ & $1.000$ & $0.347$ & $-0.347$ & $-1.000$ & $-1.532$ & $-1.879$\\
+\bottomrule
+\end{tabular}
+\caption{$N_b=7$ 的链块单粒子能级（$t=1$）。}
+\label{tab:levels}
+\end{table}
+
+\begin{itemize}
+\item $M=4$：最低 4 个能级是每块的最低 1 个（$\varepsilon_8=-1.879$），
+分布 $(1,1,1,1)$；
+\item $M=8$：最低 8 个是每块的最低 2 个（$\varepsilon_7,\varepsilon_8$），
+分布 $(2,2,2,2)$，全局基态能量
+$E_0=4\times(-1.879-1.532)=-13.646$；
+\item $M=5$：最低 5 个是某一块取 $\varepsilon_7,\varepsilon_8$、其余三块各取
+$\varepsilon_8$，分布为 $(2,1,1,1)$ 的\textbf{四种排列之一}。
+\end{itemize}
+
+\textbf{（6）简并问题。}
+
+情形一：块间简并（如上例 $M=5$）。多余的电子进哪个块的第二低能级，能量完全相同，
+得到 $2N_o$ 个彼此正交的简并基态。这不是理论缺陷，而是费米面处的\textbf{规范自由度}。
+实际计算中由两个机制钉住：
+(i) 真实材料的晶体场劈裂使各轨道（$m$）的链不同，$\varepsilon$ 列表不再全同，
+Aufbau 原则给出唯一填充；
+(ii) 参考系统里加入一个单粒子势 $V$ 调整杂质占据（对应 1402.0807 附录 E 的
+$\tilde H_A$），从而选中一个确定的分布代表。
+无论选哪个代表，块 $\alpha$ 的构造只依赖本块自己的 $\mathrm{occ}_\alpha$，
+块间选择互不影响。
+
+情形二：块内简并（如粒子--空穴对称点，能级成对出现，或偶然简并）。
+此时 $\mathrm{occ}_\alpha$ 的选择可能不唯一。处理原则相同：任意选定一个
+$\mathrm{occ}_\alpha$，占据子空间 $S$ 随之确定，后续构造照常进行。
+
+结论：无论哪种简并，一旦"占据子空间
+$S=\mathrm{Span}\{|u_k\rangle:k\in\mathrm{occ}_\alpha\}$"被选定，
+后续一切操作（密度矩阵、$K/C/b$、成键/反键、Lanczos）都是确定的。
+简并只带来选择的自由，不破坏任何一步的合法性。
+
+\subsection{二、单粒子密度矩阵 $\rho$ 的块对角结构}
+
+\textbf{（1）全局定义。}
+用\textbf{全局}参考基态 $|\Phi_0\rangle=\bigotimes_\alpha|\Phi_0^\alpha\rangle$ 定义
+作用在 $\mathcal{H}_1$ 上的单粒子密度算符 $\hat\rho$，矩阵元
+\[
+\rho_{i\alpha,\,j\beta}
+=
+\langle\Phi_0|\,c_{j,\beta}^{\dagger}c_{i,\alpha}\,|\Phi_0\rangle ,
+\qquad i,j=0,\dots,N_b .
+\]
+
+\textbf{（2）跨块矩阵元恒为零。}
+取 $\alpha\neq\beta$。利用 $|\Phi_0\rangle$ 的张量积结构，把矩阵元按因子拆分：
+\[
+\langle\Phi_0|\,c_{j,\beta}^{\dagger}c_{i,\alpha}\,|\Phi_0\rangle
+=
+\Big\langle c_{j,\beta}\Phi_0^{\beta}\,\Big|\,\Phi_0^{\beta}\Big\rangle
+\cdot
+\Big\langle \Phi_0^{\alpha}\,\Big|\,c_{i,\alpha}\Phi_0^{\alpha}\Big\rangle
+\cdot
+\prod_{\gamma\neq\alpha,\beta}\big\langle\Phi_0^{\gamma}\big|\Phi_0^{\gamma}\big\rangle .
+\]
+两个关键因子各自为零：
+\[
+c_{i,\alpha}|\Phi_0^{\alpha}\rangle\in\tilde{\mathcal{H}}_{n_\alpha-1}^\alpha
+\perp|\Phi_0^{\alpha}\rangle\in\tilde{\mathcal{H}}_{n_\alpha}^\alpha ,
+\qquad
+c_{j,\beta}^{\dagger}|\Phi_0^{\beta}\rangle\in\tilde{\mathcal{H}}_{n_\beta+1}^\beta
+\perp|\Phi_0^{\beta}\rangle\in\tilde{\mathcal{H}}_{n_\beta}^\beta .
+\]
+粒子数不同的态正交，故两个因子都是零。于是
+\[
+\rho_{i\alpha,\,j\beta}=0\qquad(\alpha\neq\beta),
+\]
+即
+\[
+\hat\rho=\bigoplus_\alpha\hat\rho^\alpha .
+\]
+
+\textbf{（3）块内矩阵元退化为块费米海公式。}
+当 $\alpha=\beta$ 时，同一拆分给出
+\[
+\rho_{i\alpha,\,j\alpha}
+=
+\langle\Phi_0|\,c_{j,\alpha}^{\dagger}c_{i,\alpha}\,|\Phi_0\rangle
+=
+\langle\Phi_0^{\alpha}|\,c_{j,\alpha}^{\dagger}c_{i,\alpha}\,|\Phi_0^{\alpha}\rangle
+\cdot
+\prod_{\gamma\neq\alpha}\underbrace{\big\langle\Phi_0^{\gamma}\big|\Phi_0^{\gamma}\big\rangle}_{=1} .
+\]
+其他块只贡献因子 $1$，所以
+\[
+\rho_{ij}^{\alpha}
+=
+\langle\Phi_0^{\alpha}|\,c_{\alpha,j}^{\dagger}c_{\alpha,i}\,|\Phi_0^{\alpha}\rangle ,
+\qquad i,j=0,\dots,N_b .
+\]
+\textbf{这就是"从全局基态退化为块基态"的精确位置}：退化发生在每一个矩阵元上，
+由张量积态各因子归一导出，是恒等式而非近似。它回答了"论文用的是全局基态还是块基态"：
+全局公式与块公式\textbf{逐矩阵元相等}，两条路线殊途同归。
+
+\subsection{三、$\hat\rho^\alpha$ 与 $\hat h^\alpha$ 共享不变子空间}
+
+\textbf{（1）从原始矩阵元出发推导 $\rho^\alpha$ 的谱分解。}
+把反解式 $c_{i,\alpha}=\sum_k w_{k,i}^{\alpha}f_{k,\alpha}$ 代入块内矩阵元：
+\[
+\rho_{ij}^{\alpha}
+=
+\sum_{k,k'}w_{k',j}^{\alpha\,*}\,w_{k,i}^{\alpha}\,
+\langle\Phi_0^{\alpha}|\,f_{k',\alpha}^{\dagger}f_{k,\alpha}\,|\Phi_0^{\alpha}\rangle .
+\]
+因为 $|\Phi_0^{\alpha}\rangle$ 是 $f$ 基下的单个构型（费米海），
+\[
+\langle\Phi_0^{\alpha}|\,f_{k',\alpha}^{\dagger}f_{k,\alpha}\,|\Phi_0^{\alpha}\rangle
+=
+\delta_{k,k'}\,n_k^{\alpha},
+\qquad
+n_k^{\alpha}=
+\begin{cases}
+1, & k\in\mathrm{occ}_\alpha,\\
+0, & k\notin\mathrm{occ}_\alpha .
+\end{cases}
+\]
+双重求和塌缩为单重求和：
+\[
+\rho_{ij}^{\alpha}
+=
+\sum_{k\in\mathrm{occ}_\alpha}w_{k,i}^{\alpha}\,w_{k,j}^{\alpha\,*} .
+\]
+另一方面，$|u_k\rangle=\sum_i w_{k,i}^{\alpha}|i\rangle$，故
+\[
+\langle i|u_k\rangle\langle u_k|j\rangle
+=
+w_{k,i}^{\alpha}\,w_{k,j}^{\alpha\,*} .
+\]
+两式对照，即得
+\[
+\hat\rho^\alpha
+=
+\sum_{k\in\mathrm{occ}_\alpha}|u_k\rangle\langle u_k|
+=
+\Pi_S ,
+\qquad
+S=\mathrm{Span}\{|u_k\rangle:\ k\in\mathrm{occ}_\alpha\} .
+\]
+
+\textbf{（2）谱结构与不变子空间。}
+$\hat\rho^\alpha$ 是投影算符（可直接验证 $\Pi_S^2=\Pi_S$），其谱结构：
+\[
+\text{本征值 }1 \text{ 的本征空间}=S,\qquad \dim S=n_\alpha ;
+\]
+\[
+\text{本征值 }0 \text{ 的本征空间}=S^{\perp},\qquad
+\dim S^{\perp}=N_b+1-n_\alpha ;
+\]
+\[
+\operatorname{tr}\hat\rho^\alpha=n_\alpha .
+\]
+与之对照，$\hat h^\alpha$ 的本征空间分解为
+\[
+\mathcal{H}_1^\alpha=S\oplus S^{\perp},
+\qquad
+S=\mathrm{Span}\{|u_k\rangle:k\in\mathrm{occ}_\alpha\},
+\quad
+S^{\perp}=\mathrm{Span}\{|u_k\rangle:k\notin\mathrm{occ}_\alpha\} .
+\]
+所以"谱结构相同"的精确含义是：
+
+\begin{enumerate}
+\item $\hat h^\alpha$ 的\textbf{每一个}本征矢 $|u_k\rangle$ 同时是 $\hat\rho^\alpha$ 的本征矢：
+$k\in\mathrm{occ}_\alpha$ 时本征值为 $1$，否则为 $0$；
+\item $\hat\rho^\alpha$ 的两个本征子空间 $S$、$S^{\perp}$
+\textbf{正是} $\hat h^\alpha$ 的两个不变子空间；
+\item 区别仅在于：$\hat h^\alpha$ 在 $S$ 内保留 $n_\alpha$ 个不同的能量本征值，
+而 $\hat\rho^\alpha$ 把它们抹平为一个 $1$；$S^{\perp}$ 内同理抹平为 $0$。
+\end{enumerate}
+
+\textbf{（3）关键推论（后续构造的地基）。}
+由于 $S$ 与 $S^{\perp}$ 由 $\hat h^\alpha$ 的本征模式张成，$\hat h^\alpha$ 保持它们不变：
+\[
+\hat h^\alpha S\subseteq S,\qquad \hat h^\alpha S^{\perp}\subseteq S^{\perp} .
+\]
+这个\textbf{不变性}是成键/反键变换能够把矩阵切成互不干扰的两块
+（$e\in S$ 与导带 $C\subseteq S^{\perp}$ 零耦合，$e'\in S^{\perp}$ 与价带 $K\subseteq S$ 零耦合）
+的全部来源。
+
+\medskip
+\section*{第三部分：浴块密度矩阵 $\rho_{\mathrm{bath}}^\alpha$ 的谱与 $\hat h^\alpha$ 白得的零元}
+
+\noindent 本部分回答三个问题：
+\begin{enumerate}
+\item 把 $\rho^\alpha$ 写成"杂质--杂质、杂质--浴、浴--杂质、浴--浴"四块之后，
+浴--浴子块 $\rho_{\mathrm{bath}}^\alpha$ 的本征空间，恰好由两个交集精确给出：
+$K=\mathcal{H}_{1,\mathrm{bath}}^\alpha\cap S$（本征值 $1$）与
+$C=\mathcal{H}_{1,\mathrm{bath}}^\alpha\cap S^{\perp}$（本征值 $0$）；
+\item 剩下的一个本征值必为分数 $1-n_{\mathrm{imp}}$，其本征矢 $|b\rangle$ 是唯一的
+"活性轨道"，且 $\mathcal{H}_{1,\mathrm{bath}}^\alpha=\mathrm{Span}\{|b\rangle\}\oplus K\oplus C$；
+\item 借助第二部分的"$\hat\rho^\alpha$ 与 $\hat h^\alpha$ 共享 $S$、$S^{\perp}$"，
+$\hat h^\alpha$ 在新基下\textbf{白得}一批严格零元：$v$ 块与 $d$ 块完全解耦。
+\end{enumerate}
+
+\medskip
+\noindent\textbf{记号}：块 $\alpha$ 的 $\rho^\alpha$ 已在第二部分求出，
+$\rho^\alpha=\sum_{k\in\mathrm{occ}_\alpha}|u_k\rangle\langle u_k|$，
+本征值 $1$ 的本征空间是占据子空间 $S$（维数 $n_\alpha$），
+本征值 $0$ 的本征空间是 $S^{\perp}$（维数 $N_b+1-n_\alpha$）。
+本部分只讨论这一个块，为省笔墨略去上标 $\alpha$。
+
+\subsection{一、$\rho_{\mathrm{bath}}$ 的谱：两个交集精确给出 $K$ 与 $C$}
+
+\textbf{（1）$\rho$ 的块形式与作用规则。}
+在基 $\{|0\rangle,|1\rangle,\dots,|N_b\rangle\}$（$|0\rangle$ 是杂质，其余是浴）下，
+把 $\rho$ 按指标写成块：
+\[
+\rho
+=
+\begin{pmatrix}
+\rho_{00} & \rho_{01} & \cdots & \rho_{0,N_b}\\[2pt]
+\rho_{10} & & &\\
+\vdots & & \rho_{\mathrm{bath}} &\\
+\rho_{N_b,0} & & &
+\end{pmatrix},
+\]
+其中 $\rho_{\mathrm{bath}}$ 是 $N_b\times N_b$ 的浴--浴子块，由矩阵元
+$\rho_{ij}=\langle\Phi_0^{\alpha}|c_j^{\dagger}c_i|\Phi_0^{\alpha}\rangle$
+（$i,j=1,\dots,N_b$）组成；左上角是杂质--杂质元
+$\rho_{00}=\langle c_0^{\dagger}c_0\rangle=n_{\mathrm{imp}}$。
+
+取一个\textbf{纯浴}向量 $|w\rangle\in\mathcal{H}_{1,\mathrm{bath}}$，即
+$|w\rangle=(0,w_1,\dots,w_{N_b})^T$，$\mathbf{w}=(w_1,\dots,w_{N_b})^T$。
+把 $\rho$ 直接作用上去，按分量拆成"杂质方向分量 $+$ 浴内分量"：
+\[
+\rho|w\rangle
+=
+\begin{pmatrix}
+\sum_{j=1}^{N_b}\rho_{0j}w_j\\[6pt]
+\rho_{\mathrm{bath}}\,\mathbf{w}
+\end{pmatrix}.
+\]
+即：$\rho|w\rangle$ 的浴内分量就是 $\rho_{\mathrm{bath}}\mathbf{w}$，
+杂质方向分量是一个数 $\sum_{j=1}^{N_b}\rho_{0j}w_j$。这个拆分式是本节的全部算账工具。
+
+\textbf{（2）正向：$|w\rangle\in S$ 时，逐分量验证。}
+第二部分已证 $\rho$ 是 $S$ 上的恒等算符、$S^{\perp}$ 上的零算符
+（$\rho$ 幂等、厄米，本征值只有 $0$ 与 $1$）。若 $|w\rangle\in S$，则
+\[
+\rho|w\rangle=|w\rangle.
+\]
+把 $\rho|w\rangle$ 的拆分式代入，左右逐分量相等：
+
+\begin{itemize}
+\item 浴内分量：$\rho_{\mathrm{bath}}\mathbf{w}=\mathbf{w}$；
+\item 杂质方向分量：$\sum_{j=1}^{N_b}\rho_{0j}w_j=0$。
+\end{itemize}
+
+第二条正是"其余项为零"的验证：$\rho|w\rangle$ 虽然按块形式有杂质方向分量，
+但当 $|w\rangle\in S$ 时它必须严格为零——因为右边 $|w\rangle$ 没有杂质分量。
+于是剩下浴--浴子块单独作用在 $\mathbf{w}$ 上就等于 $\mathbf{w}$ 本身：
+\[
+\rho_{\mathrm{bath}}\mathbf{w}=\mathbf{w}.
+\]
+即 $|w\rangle$ 是 $\rho_{\mathrm{bath}}$ 的本征值为 $1$ 的本征矢。
+
+\textbf{（3）正向：$|w\rangle\in S^{\perp}$ 时，同理。}
+此时 $\rho|w\rangle=0$，拆分式两边都为零：
+\[
+\rho_{\mathrm{bath}}\mathbf{w}=0,\qquad
+\sum_{j=1}^{N_b}\rho_{0j}w_j=0.
+\]
+即 $|w\rangle$ 是 $\rho_{\mathrm{bath}}$ 的本征值为 $0$ 的本征矢。
+
+\textbf{（4）反向：两个方向都可逆，因此是精确相等。}
+反向（本征值 $1$）：设 $|w\rangle\in\mathcal{H}_{1,\mathrm{bath}}$ 满足
+$\rho_{\mathrm{bath}}\mathbf{w}=\mathbf{w}$。令
+$\rho|w\rangle=\big(a,\ \mathbf{w}\big)^T$，其中
+$a=\sum_{j=1}^{N_b}\rho_{0j}w_j$ 是杂质方向分量。用幂等性算两边：
+\[
+\langle w|\rho|w\rangle
+=
+\langle w|\rho_{\mathrm{bath}}|w\rangle
+=
+\langle w|w\rangle
+=
+\|\mathbf{w}\|^2 ,
+\]
+（第一个等号：$|w\rangle$ 是纯浴向量，内积只用到浴--浴子块）
+\[
+\langle w|\rho|w\rangle
+=
+\langle \rho w|\rho w\rangle
+=
+\|\rho w\|^2
+=
+\|\mathbf{w}\|^2+|a|^2 .
+\]
+（第二个等号：$\rho$ 厄米且幂等；第三个等号：$\rho|w\rangle$ 的浴分量是 $\mathbf{w}$、
+杂质分量是 $a$，正交求和。）两式对照得 $|a|^2=0$，即 $a=0$，于是
+$\rho|w\rangle=|w\rangle$，故 $|w\rangle\in S$。
+
+反向（本征值 $0$）：设 $\rho_{\mathrm{bath}}\mathbf{w}=0$，则
+\[
+\langle w|\rho|w\rangle=\langle w|\rho_{\mathrm{bath}}|w\rangle=0
+=\|\rho w\|^2 ,
+\]
+故 $\rho|w\rangle=0$，即 $|w\rangle\in S^{\perp}$。
+
+\textbf{（5）结论。}
+正向与反向合起来，得到\textbf{精确相等}（不是单侧包含）：
+\[
+K:=\big\{|w\rangle\in\mathcal{H}_{1,\mathrm{bath}}:\ \rho_{\mathrm{bath}}|w\rangle=|w\rangle\big\}
+=
+\mathcal{H}_{1,\mathrm{bath}}\cap S ,
+\]
+\[
+C:=\big\{|w\rangle\in\mathcal{H}_{1,\mathrm{bath}}:\ \rho_{\mathrm{bath}}|w\rangle=0\big\}
+=
+\mathcal{H}_{1,\mathrm{bath}}\cap S^{\perp} .
+\]
+$K$ 即价带（本征值 $1$ 的整块子空间），$C$ 即导带（本征值 $0$ 的整块子空间）。
+$K\perp C$ 自动成立：$K\subseteq S$、$C\subseteq S^{\perp}$，而 $S\perp S^{\perp}$。
+
+\subsection{二、活性轨道 $|b\rangle$：必为一条，且是"斜插"方向}
+
+\textbf{（1）维度估计：$K\oplus C$ 至少占满 $N_b-1$ 维。}
+用一般事实：同一空间的两个子空间 $A,B$ 满足
+\[
+\dim(A\cap B)\ge\dim A+\dim B-\dim(\text{总空间}).
+\]
+代入 $A=\mathcal{H}_{1,\mathrm{bath}}$（维数 $N_b$）、$B=S$（维数 $n_\alpha$）、
+总空间 $\mathcal{H}_1$（维数 $N_b+1$）：
+\[
+\dim K\ge N_b+n_\alpha-(N_b+1)=n_\alpha-1.
+\]
+代入 $B=S^{\perp}$（维数 $N_b+1-n_\alpha$）：
+\[
+\dim C\ge N_b+(N_b+1-n_\alpha)-(N_b+1)=N_b-n_\alpha.
+\]
+$K\perp C$，所以 $\dim(K\oplus C)=\dim K+\dim C\ge N_b-1$。
+浴子空间共 $N_b$ 维，因此
+\[
+\dim\Big(\mathcal{H}_{1,\mathrm{bath}}\ominus(K\oplus C)\Big)\le 1.
+\]
+
+\textbf{（2）剩下的那一条由迹守恒钉死为分数。}
+$\rho_{\mathrm{bath}}$ 是 $N_b$ 维厄米算符，谱由三部分组成：
+$K$ 贡献 $\dim K$ 个 $1$，$C$ 贡献 $\dim C$ 个 $0$，余下至多一个本征值 $\lambda$。
+另一方面，迹可以直接从定义求和：
+\[
+\operatorname{tr}\rho_{\mathrm{bath}}
+=
+\sum_{i=1}^{N_b}\rho_{ii}
+=
+\sum_{i=1}^{N_b}\langle\Phi_0^{\alpha}|c_i^{\dagger}c_i|\Phi_0^{\alpha}\rangle
+=
+\text{浴内总电子数}
+=
+n_\alpha-n_{\mathrm{imp}}.
+\]
+（块内共 $n_\alpha$ 个电子，杂质占据 $n_{\mathrm{imp}}=\rho_{00}$，差即浴中电子数。）
+谱分解下的迹则是
+\[
+\operatorname{tr}\rho_{\mathrm{bath}}
+=
+1\cdot\dim K+0\cdot\dim C+\lambda
+=
+(n_\alpha-1)+\lambda.
+\]
+（第二步用了 $\dim K=n_\alpha-1$；在"一般位置"下交集维数取下界，即取等号，
+杂质与浴有真实耦合时正是如此。）两式相等：
+\[
+\lambda=n_\alpha-n_{\mathrm{imp}}-(n_\alpha-1)=1-n_{\mathrm{imp}}.
+\]
+当 $0<n_{\mathrm{imp}}<1$（杂质与浴确实杂化）时 $0<\lambda<1$，是严格的分数。
+对应的本征矢记作 $|b\rangle$，即\textbf{活性轨道}。于是
+\[
+\mathcal{H}_{1,\mathrm{bath}}^{\alpha}
+=
+\mathrm{Span}\{|b\rangle\}\ \oplus\ K\ \oplus\ C ,
+\]
+维度核对：$1+(n_\alpha-1)+(N_b-n_\alpha)=N_b$。$\checkmark$
+
+\textbf{（3）$|b\rangle$ 为什么"斜插"，为什么不属于 $K\oplus C$。}
+利用 $\mathcal{H}_1=S\oplus S^{\perp}$ 的正交直和分解，把 $|b\rangle$ 唯一拆成
+\[
+|b\rangle=s+s',\qquad s\in S,\quad s'\in S^{\perp}.
+\]
+用 $\rho$ 提取 $s$：因为 $\rho$ 在 $S$ 上恒等、在 $S^{\perp}$ 上为零，
+\[
+\rho|b\rangle=\rho s+\rho s'=s.
+\]
+另一方面，把 $\rho$ 的块形式作用到纯浴向量 $|b\rangle=(0,\mathbf{b})^T$ 上：
+\[
+\rho|b\rangle
+=
+\begin{pmatrix}
+\sum_{j=1}^{N_b}\rho_{0j}b_j\\[6pt]
+\rho_{\mathrm{bath}}\,\mathbf{b}
+\end{pmatrix}
+=
+\begin{pmatrix}
+a\\[2pt]
+\lambda\,\mathbf{b}
+\end{pmatrix},
+\qquad
+\lambda=1-n_{\mathrm{imp}}.
+\]
+（第二行用了 $|b\rangle$ 是 $\rho_{\mathrm{bath}}$ 本征值为 $\lambda$ 的本征矢。）
+于是
+\[
+s=\lambda|b\rangle+a|0\rangle ,
+\qquad
+s'=|b\rangle-s=(1-\lambda)|b\rangle-a|0\rangle ,
+\]
+其中 $a=\sum_{j}\rho_{0j}b_j=\langle0|\rho|b\rangle$。
+
+现在说明 $a\neq0$。反设 $a=0$，则 $s=\lambda|b\rangle$。$s\in S$ 且 $\lambda\neq0$，
+得 $|b\rangle\in S$；又 $|b\rangle\in\mathcal{H}_{1,\mathrm{bath}}$，
+故 $|b\rangle\in\mathcal{H}_{1,\mathrm{bath}}\cap S=K$。但 $|b\rangle$ 是 $\rho_{\mathrm{bath}}$
+本征值为 $\lambda$（分数）的本征矢，与 $K$（本征值 $1$ 的本征空间）正交，
+非零向量不可能既属于又正交于 $K$。矛盾。故 $a\neq0$。
+
+因此 $s$ 与 $s'$ 都含有\textbf{非零的} $|0\rangle$ 分量：
+$s$ 含 $a|0\rangle$，$s'$ 含 $-a|0\rangle$。它们都不是纯浴向量。
+也就是说：$|b\rangle$ 虽然躺在浴子空间里，但把它拆回 $S$ 与 $S^{\perp}$ 时，
+两个分片都伸出浴外（都带杂质成分），从而都不能进入 $K$ 或 $C$。
+这正是 $|b\rangle$ 与 $K\oplus C$ 的区别：
+$K$、$C$ 是"完全贴合"浴面的方向，$|b\rangle$ 是"斜插"在 $S$ 与 $S^{\perp}$
+之间的对角线——它既沾占据子空间、又沾空子空间，两者的杂质分量彼此抵消，
+恰好把它送回浴内。
+
+\textbf{（4）$|b\rangle$ 的存在性与一维性总结。}
+综上：$\rho_{\mathrm{bath}}$ 的谱精确地为
+\[
+\underbrace{1,\dots,1}_{n_\alpha-1\ \text{个}},\quad
+\lambda=1-n_{\mathrm{imp}},\quad
+\underbrace{0,\dots,0}_{N_b-n_\alpha\ \text{个}},
+\]
+分别对应 $K$、$\mathrm{Span}\{|b\rangle\}$、$C$。分数本征矢必为一条：
+余下维数 $\le1$（维度估计），且分数本征值确实存在（迹守恒），
+故余下维数恰为 $1$。
+
+\subsection{三、$\hat h$ 在新基下白得的一批零元}
+
+\textbf{（1）论证。}
+第二部分已证：$\hat h$ 与 $\rho$ 共享不变子空间，
+\[
+\hat h S\subseteq S,\qquad \hat h S^{\perp}\subseteq S^{\perp}.
+\]
+本部分又证：$K\subseteq S$，$C\subseteq S^{\perp}$。
+取任意 $|v\rangle\in K$、$|d\rangle\in C$：
+\[
+\hat h|v\rangle\in S,\qquad |d\rangle\in S^{\perp},
+\]
+$S\perp S^{\perp}$，故
+\[
+\langle d|\hat h|v\rangle=0.
+\]
+由厄米性，$\langle v|\hat h|d\rangle=\langle d|\hat h|v\rangle^*=0$。
+所以 $\hat h$ 在"价带方向--导带方向"的全部交叉矩阵元严格为零。
+注意这不需要任何额外的对准操作：只要把基从
+$\{|0\rangle,|1\rangle,\dots,|N_b\rangle\}$ 换成 $\rho_{\mathrm{bath}}$ 的本征基
+$\{|0\rangle,|b\rangle,K\ \text{的基},C\ \text{的基}\}$，
+这批零元\textbf{自动出现}。
+
+\textbf{（2）8 维实例（$N_b=7,\ n_\alpha=3$）。}
+此时 $\dim K=n_\alpha-1=2$，$\dim C=N_b-n_\alpha=4$，
+$\dim b=1$。设 $K$ 的任意一组基为 $\{v_1^{\mathrm{old}},v_2^{\mathrm{old}}\}$，
+$C$ 的任意一组基为 $\{d_1^{\mathrm{old}},d_2^{\mathrm{old}},d_3^{\mathrm{old}},d_4^{\mathrm{old}}\}$
+（标 "old" 提醒：这是谱分解给出的\textbf{非唯一}基，第四部分还要用 Lanczos 换成链基）。
+$\hat h$ 在基
+\[
+\big\{|0\rangle,\ |b\rangle,\ v_1^{\mathrm{old}},\ v_2^{\mathrm{old}},\
+d_1^{\mathrm{old}},\ d_2^{\mathrm{old}},\ d_3^{\mathrm{old}},\ d_4^{\mathrm{old}}\big\}
+\]
+下的矩阵形状为（$\times=$ 一般非零，$0=$ 严格零）：
+
+\[
+\begin{array}{c|cccccccc}
+ & |0\rangle & |b\rangle & v_1 & v_2 & d_1 & d_2 & d_3 & d_4\\[2pt]
+\hline
+|0\rangle & \times & \times & \times & \times & \times & \times & \times & \times\\[2pt]
+|b\rangle & \times & \times & \times & \times & \times & \times & \times & \times\\[2pt]
+v_1 & \times & \times & \times & \times & 0 & 0 & 0 & 0\\[2pt]
+v_2 & \times & \times & \times & \times & 0 & 0 & 0 & 0\\[2pt]
+d_1 & \times & \times & 0 & 0 & \times & \times & \times & \times\\[2pt]
+d_2 & \times & \times & 0 & 0 & \times & \times & \times & \times\\[2pt]
+d_3 & \times & \times & 0 & 0 & \times & \times & \times & \times\\[2pt]
+d_4 & \times & \times & 0 & 0 & \times & \times & \times & \times
+\end{array}
+\]
+
+\textbf{（3）逐块解读。}
+
+\begin{itemize}
+\item 左下角与右上角的 $2\times4$、$4\times2$ 交叉块全是严格零：
+价带与导带完全解耦。这就是本节"白得"的成果。
+\item 第 $0$ 行、第 $b$ 行（以及对应两列）仍是\textbf{稠密}的：
+杂质与活性目前连着 $v_1,v_2$ 和 $d_1,\dots,d_4$ 全部方向，
+这是第四部分要处理的"散开"问题。
+\item $v$ 块（$2\times2$）与 $d$ 块（$4\times4$）目前也是稠密的：
+$\hat h$ 限制在 $K$ 内、$C$ 内还不是三对角。这同样留给第四部分。
+\end{itemize}
+
+\textbf{（4）为什么这批零元"白得"？}
+三条事实缺一不可：
+(i) $\hat h$ 保持 $S$ 与 $S^{\perp}$（第二部分，源自 $S$ 由 $\hat h$ 本征模式张成）；
+(ii) $K\subseteq S$、$C\subseteq S^{\perp}$（本部分第一节）；
+(iii) $S\perp S^{\perp}$（正交直和分解）。
+三者合起来，$K$ 方向被 $\hat h$ 送到 $S$ 内，而 $C$ 方向与 $S$ 正交，交叉元必零。
+没有任何"对准""优化"，纯粹是\textbf{基的选择}（$\rho_{\mathrm{bath}}$ 的本征基）
+与\textbf{不变性子空间}的必然结果。
+
+\medskip
+\section*{第四部分：成键与反键——$\rho$ 的 $2\times2$ 核心块与 $\hat h$ 白得的第二批零元}
+
+\noindent 本部分回答两个问题：
+\begin{enumerate}
+\item $\rho$ 在基 $\{|0\rangle,|b\rangle,K,C\}$ 下只剩一个 $2\times2$ 的非平凡块，
+其两个参数 $n_{\mathrm{imp}}$、$x$ 由幂等性完全钉死；
+\item 在 $\mathrm{Span}\{|0\rangle,|b\rangle\}$ 内做成键/反键旋转，得到分别属于
+$S$ 与 $S^{\perp}$ 的 $|e\rangle$、$|e'\rangle$，使 $\hat h$ 在新基下\textbf{白得第二批零元}，
+把矩阵劈成两个互不干扰的小块。
+\end{enumerate}
+
+\medskip
+\noindent\textbf{记号}：沿用前文。第三部分已得
+$\mathcal{H}_1=\mathrm{Span}\{|0\rangle\}\oplus\mathrm{Span}\{|b\rangle\}\oplus K\oplus C$，
+其中 $K$（价带，本征值 $1$，$\dim K=n_\alpha-1$）、
+$C$（导带，本征值 $0$，$\dim C=N_b-n_\alpha$）、
+$|b\rangle$（活性，本征值 $n_b=1-n_{\mathrm{imp}}$）。
+$|b\rangle=(0,b_1,\dots,b_{N_b})^T$ 是纯浴向量。
+本部分略去上标 $\alpha$。
+
+\subsection{一、$\rho$ 在基 $\{|0\rangle,|b\rangle,K,C\}$ 下的分块形式}
+
+\textbf{（1）两个作用式。}
+$|b\rangle$ 是浴--浴子块 $\rho_{\mathrm{bath}}$ 本征值为 $n_b$ 的本征矢，故
+$\rho|b\rangle$ 的浴内分量是 $n_b|b\rangle$；杂质方向分量是
+$\langle0|\rho|b\rangle$ 乘以 $|0\rangle$。记
+\[
+x:=\langle0|\rho|b\rangle
+=\sum_{j=1}^{N_b}\rho_{0j}\,b_j ,
+\]
+则
+\[
+\rho|b\rangle=n_b|b\rangle+x|0\rangle .
+\]
+（这就是第三部分里 $a=\langle0|\rho|b\rangle$ 的那个量，本部分改记为 $x$。
+第三部分已证 $x\neq0$。）
+
+另一方面，直接把 $\rho$ 展开作用到杂质基矢上：
+\[
+\rho|0\rangle
+=
+\sum_{j=0}^{N_b}\rho_{j0}\,|j\rangle
+=
+\rho_{00}|0\rangle+\sum_{i=1}^{N_b}\rho_{i0}\,|i\rangle
+=
+n_{\mathrm{imp}}|0\rangle+\sum_{i=1}^{N_b}\rho_{i0}\,|i\rangle ,
+\]
+其中 $n_{\mathrm{imp}}=\rho_{00}=\langle c_0^{\dagger}c_0\rangle$ 是杂质占据数。
+
+\textbf{（2）$\rho|0\rangle$ 的浴内分量沿 $|b\rangle$ 方向。}
+利用 $\rho$ 的厄米性和 $K$、$C$ 的本征性：
+
+取任意 $|v\rangle\in K$。$K\subseteq S$，故 $\rho|v\rangle=|v\rangle$，于是
+\[
+\langle v|\rho|0\rangle
+=
+\langle \rho v|0\rangle
+=
+\langle v|0\rangle
+=
+0 .
+\]
+（最后一步：$|v\rangle$ 是纯浴向量，$|0\rangle$ 是杂质基矢，在格点基下正交。）
+
+取任意 $|d\rangle\in C$。$C\subseteq S^{\perp}$，故 $\rho|d\rangle=0$，于是
+\[
+\langle d|\rho|0\rangle
+=
+\langle \rho d|0\rangle
+=
+0 .
+\]
+
+所以 $\rho|0\rangle$ 与整个 $K$、整个 $C$ 都正交。而
+$\mathcal{H}_1=\mathrm{Span}\{|0\rangle,|b\rangle\}\oplus K\oplus C$，
+$\rho|0\rangle$ 的浴内分量 $\sum_{i=1}^{N_b}\rho_{i0}|i\rangle$ 是纯浴向量，
+它同时正交于 $K$ 与 $C$，只能落在 $\mathrm{Span}\{|b\rangle\}$ 里。记
+\[
+\sum_{i=1}^{N_b}\rho_{i0}\,|i\rangle=y\,|b\rangle ,
+\]
+则
+\[
+\rho|0\rangle=n_{\mathrm{imp}}|0\rangle+y\,|b\rangle .
+\]
+
+\textbf{（3）$x=y$。}
+由第一个作用式：
+\[
+\langle0|\rho|b\rangle
+=
+\langle0|\big(n_b|b\rangle+x|0\rangle\big)
+=
+n_b\langle0|b\rangle+x
+=
+x .
+\]
+由第二个作用式与厄米性：
+\[
+\langle b|\rho|0\rangle
+=
+\langle b|\big(n_{\mathrm{imp}}|0\rangle+y|b\rangle\big)
+=
+n_{\mathrm{imp}}\langle b|0\rangle+y
+=
+y .
+\]
+而 $\rho$ 厄米：$\langle0|\rho|b\rangle=\langle b|\rho|0\rangle^*$。取 $|b\rangle$ 的相位使
+$x$ 为实数（$|b\rangle\to e^{i\phi}|b\rangle$ 会同步旋转 $x$，这是合法的相位约定），则
+$x=y$。于是
+\[
+\rho|0\rangle=n_{\mathrm{imp}}|0\rangle+x\,|b\rangle .
+\]
+
+\textbf{（4）分块形式。}
+合起来：
+\[
+\rho|0\rangle=n_{\mathrm{imp}}|0\rangle+x|b\rangle,\qquad
+\rho|b\rangle=x|0\rangle+n_b|b\rangle,
+\]
+且 $\rho$ 在 $K$ 上恒等、在 $C$ 上为零、所有 $K$、$C$ 与其他方向之间的矩阵元为零。
+因此在基 $\{|0\rangle,|b\rangle,K\ \text{的基},C\ \text{的基}\}$ 下：
+\[
+\rho
+=
+\begin{pmatrix}
+n_{\mathrm{imp}} & x & 0 & \cdots & 0\\[2pt]
+x & n_b & 0 & \cdots & 0\\[2pt]
+0 & 0 & 1 & \cdots & 0\\[2pt]
+\vdots & \vdots & \vdots & \ddots & \vdots\\[2pt]
+0 & 0 & 0 & \cdots & 0
+\end{pmatrix}
+\qquad(\text{基：}|0\rangle,|b\rangle,K,C).
+\]
+左上角是 $2\times2$ 的杂质--活性块
+$M=\begin{pmatrix}n_{\mathrm{imp}}&x\\ x&n_b\end{pmatrix}$；
+$K$ 块是 $(\dim K)$ 维单位阵，$C$ 块是 $(\dim C)$ 维零阵。
+
+\textbf{（5）用幂等性求出 $x$。}
+由第二部分的谱分解 $\rho=\sum_{k\in\mathrm{occ}}|u_k\rangle\langle u_k|$，
+$|u_k\rangle$ 两两正交归一，直接算得 $\rho^2=\rho$（幂等）。
+分块形式下各块互不干扰，故 $2\times2$ 块 $M$ 也幂等：$M^2=M$。
+逐元写出：
+\[
+(M^2)_{11}=n_{\mathrm{imp}}^2+x^2=n_{\mathrm{imp}} ,
+\]
+\[
+(M^2)_{12}=x(n_{\mathrm{imp}}+n_b)=x .
+\]
+由第二式：$x(n_{\mathrm{imp}}+n_b-1)=0$。$x\neq0$，故
+\[
+n_{\mathrm{imp}}+n_b=1 ,
+\qquad\text{即}\qquad
+n_b=1-n_{\mathrm{imp}} .
+\]
+（这与第三部分由迹守恒得到的结论完全一致，两条路殊途同归。）
+代回第一式：
+\[
+x^2=n_{\mathrm{imp}}(1-n_{\mathrm{imp}})=n_{\mathrm{imp}}\,n_b ,
+\]
+\[
+x=\sqrt{n_{\mathrm{imp}}\,n_b}
+=\sqrt{n_{\mathrm{imp}}(1-n_{\mathrm{imp}})} .
+\]
+例：$n_{\mathrm{imp}}=1/4$ 时，$n_b=3/4$，$x=\sqrt3/4$。
+
+\subsection{二、成键与反键：在 $\mathrm{Span}\{|0\rangle,|b\rangle\}$ 内造出 $S$ 与 $S^{\perp}$ 的方向}
+
+\textbf{（1）设定。}
+希望在 $\mathrm{Span}\{|0\rangle,|b\rangle\}$ 内找两个正交归一的新基矢，
+一个属于 $S$（即 $\rho$ 本征值 $1$ 的本征矢），一个属于 $S^{\perp}$
+（本征值 $0$ 的本征矢）。一般形式（实参数）：
+\[
+|e\rangle=\alpha|0\rangle+\beta|b\rangle,\qquad
+|e'\rangle=\beta|0\rangle-\alpha|b\rangle,
+\qquad
+\alpha^2+\beta^2=1 .
+\]
+正交归一可直接验证：
+$\langle e|e'\rangle=\alpha\beta-\beta\alpha=0$，
+$\langle e|e\rangle=\langle e'|e'\rangle=\alpha^2+\beta^2=1$。
+
+\textbf{（2）要求 $\rho|e\rangle=|e\rangle$，对比系数解出 $\alpha,\beta$。}
+用第一节的两个作用式：
+\[
+\rho|e\rangle
+=
+\alpha\,\rho|0\rangle+\beta\,\rho|b\rangle
+=
+\alpha\big(n_{\mathrm{imp}}|0\rangle+x|b\rangle\big)
++\beta\big(x|0\rangle+n_b|b\rangle\big)
+=
+\big(\alpha n_{\mathrm{imp}}+\beta x\big)|0\rangle
++\big(\alpha x+\beta n_b\big)|b\rangle .
+\]
+要求它等于 $\alpha|0\rangle+\beta|b\rangle$，$|0\rangle$、$|b\rangle$ 两个分量分别相等：
+
+$|0\rangle$ 分量：
+\[
+\alpha n_{\mathrm{imp}}+\beta x=\alpha
+\;\Rightarrow\;
+\beta x=\alpha(1-n_{\mathrm{imp}})=\alpha n_b .
+\]
+
+$|b\rangle$ 分量：
+\[
+\alpha x+\beta n_b=\beta
+\;\Rightarrow\;
+\alpha x=\beta(1-n_b)=\beta n_{\mathrm{imp}} .
+\]
+
+两个式子给出\textbf{同一个}比值：
+\[
+\frac{\beta}{\alpha}
+=
+\frac{n_b}{x}
+=
+\frac{x}{n_{\mathrm{imp}}}
+=
+\sqrt{\frac{n_b}{n_{\mathrm{imp}}}} .
+\]
+（最后一个等号用了 $x^2=n_{\mathrm{imp}}n_b$。）加归一化 $\alpha^2+\beta^2=1$：
+\[
+\alpha^2=n_{\mathrm{imp}},\qquad
+\beta^2=n_b=1-n_{\mathrm{imp}} ,
+\]
+即
+\[
+|e\rangle
+=
+\sqrt{n_{\mathrm{imp}}}\;|0\rangle+\sqrt{1-n_{\mathrm{imp}}}\;|b\rangle .
+\]
+
+\textbf{（3）验证 $\rho|e'\rangle=0$。}
+\[
+\rho|e'\rangle
+=
+\beta\,\rho|0\rangle-\alpha\,\rho|b\rangle
+=
+\beta\big(n_{\mathrm{imp}}|0\rangle+x|b\rangle\big)
+-\alpha\big(x|0\rangle+n_b|b\rangle\big)
+=
+\big(\beta n_{\mathrm{imp}}-\alpha x\big)|0\rangle
++\big(\beta x-\alpha n_b\big)|b\rangle .
+\]
+由第（2）步得到的两条关系
+$\beta n_{\mathrm{imp}}=\alpha x$、$\beta x=\alpha n_b$，
+两个分量的系数同时为零。故
+\[
+\rho|e'\rangle=0 .
+\]
+
+\textbf{（4）归属与备注。}
+$|e\rangle$ 是 $\rho$ 本征值 $1$ 的本征矢，故 $|e\rangle\in S$；
+$|e'\rangle$ 是本征值 $0$ 的本征矢，故 $|e'\rangle\in S^{\perp}$。
+注意：它们一般\textbf{不是} $\hat h$ 的本征矢——$S$ 内各能量模式 $|u_k\rangle$
+的能量互不相同，$|e\rangle$ 是这些 $|u_k\rangle$ 的某个线性组合。
+但后面用不到"本征矢"身份，只需要它们的\textbf{归属}：
+$|e\rangle\in S$、$|e'\rangle\in S^{\perp}$。
+
+\textbf{（5）旋转矩阵（为下一部分反变换预留）。}
+从 $\{|0\rangle,|b\rangle\}$ 到 $\{|e\rangle,|e'\rangle\}$ 的变换是
+\[
+\big(|e\rangle,\ |e'\rangle\big)
+=
+\big(|0\rangle,\ |b\rangle\big)
+\begin{pmatrix}
+\alpha & \beta\\
+\beta & -\alpha
+\end{pmatrix}
+=:
+\big(|0\rangle,\ |b\rangle\big)\,W ,
+\]
+其中
+\[
+W=\begin{pmatrix}\alpha&\beta\\ \beta&-\alpha\end{pmatrix},
+\qquad
+\alpha^2+\beta^2=1 .
+\]
+$W$ 是实对称正交矩阵，且
+\[
+W^2=
+\begin{pmatrix}\alpha^2+\beta^2&\alpha\beta-\beta\alpha\\
+\beta\alpha-\alpha\beta&\beta^2+\alpha^2\end{pmatrix}
+=
+\begin{pmatrix}1&0\\0&1\end{pmatrix} ,
+\]
+即 $W$ \textbf{自逆}。下一部分的反变换将直接使用同一个 $W$。
+
+\subsection{三、$\hat h$ 在成键基下白得的第二批零元}
+
+\textbf{（1）论证。}
+第二部分已证 $\hat h$ 保持 $S$ 与 $S^{\perp}$ 不变：
+\[
+\hat h S\subseteq S,\qquad \hat h S^{\perp}\subseteq S^{\perp} .
+\]
+第（4）步又证 $|e\rangle\in S$、$|e'\rangle\in S^{\perp}$。逐条检查：
+
+(i) $\hat h|e\rangle\in S$，而 $|d_j\rangle\in C\subseteq S^{\perp}$，
+$S\perp S^{\perp}$，故对\textbf{所有} $j$：
+\[
+\langle d_j|\hat h|e\rangle=0 .
+\]
+
+(ii) $\hat h|e'\rangle\in S^{\perp}$，而 $|v_i\rangle\in K\subseteq S$，故对\textbf{所有} $i$：
+\[
+\langle v_i|\hat h|e'\rangle=0 .
+\]
+
+(iii) $\hat h|e\rangle\in S$，$|e'\rangle\in S^{\perp}$，故
+\[
+\langle e'|\hat h|e\rangle=0 .
+\]
+
+(iv) 第三部分已证对\textbf{所有} $i,j$：
+\[
+\langle d_j|\hat h|v_i\rangle=0 .
+\]
+
+\textbf{（2）8 维实例的矩阵演示}（$N_b=7,\ n_\alpha=3$，$N_v=2,\ N_d=4$）。
+在基
+\[
+\big\{|e\rangle,\ |e'\rangle,\ v_1,\ v_2,\ d_1,\ d_2,\ d_3,\ d_4\big\}
+\]
+下，$\hat h$ 的矩阵形状为（$\times=$ 一般非零，$0=$ 严格零）：
+
+\[
+\begin{array}{c|cccccccc}
+ & |e\rangle & |e'\rangle & v_1 & v_2 & d_1 & d_2 & d_3 & d_4\\[2pt]
+\hline
+|e\rangle & \times & 0 & \times & \times & 0 & 0 & 0 & 0\\[2pt]
+|e'\rangle & 0 & \times & 0 & 0 & \times & \times & \times & \times\\[2pt]
+v_1 & \times & 0 & \times & \times & 0 & 0 & 0 & 0\\[2pt]
+v_2 & \times & 0 & \times & \times & 0 & 0 & 0 & 0\\[2pt]
+d_1 & 0 & \times & 0 & 0 & \times & \times & \times & \times\\[2pt]
+d_2 & 0 & \times & 0 & 0 & \times & \times & \times & \times\\[2pt]
+d_3 & 0 & \times & 0 & 0 & \times & \times & \times & \times\\[2pt]
+d_4 & 0 & \times & 0 & 0 & \times & \times & \times & \times
+\end{array}
+\]
+
+\textbf{（3）逐块解读。}
+
+\begin{itemize}
+\item \textbf{第二批白得的零元}：$|e\rangle$ 行（列）与整个导带 $d_1,\dots,d_4$
+之间全是零；$|e'\rangle$ 行（列）与整个价带 $v_1,v_2$ 之间全是零；
+$|e\rangle$ 与 $|e'\rangle$ 之间是零。
+\item 于是矩阵\textbf{劈成两个互不干扰的小块}：
+小问题一 $=\{|e\rangle\}\cup K$（$3\times3$ 块，图中左上），
+小问题二 $=\{|e'\rangle\}\cup C$（$5\times5$ 块，图中右下）。
+$|e\rangle$ 只与价带链 $K$ 打交道，$|e'\rangle$ 只与导带链 $C$ 打交道，
+两者之间没有任何耦合。
+\item 尚未处理的稠密部分：$|e\rangle$ 行里 $v_1,v_2$ 两个元（$|e\rangle$ 还连着
+\textbf{整条}价带），$|e'\rangle$ 行里 $d_1,\dots,d_4$ 四个元（$|e'\rangle$ 还连着
+\textbf{整条}导带）；$K$ 块（$2\times2$）与 $C$ 块（$4\times4$）内部也还是稠密的。
+这些是下一部分的任务。
+\end{itemize}
+
+\textbf{（4）为什么又是"白得"？}
+不需要任何额外的对准或微调：只需\textbf{换基}（从 $\{|0\rangle,|b\rangle\}$
+换成 $\{|e\rangle,|e'\rangle\}$，$K$、$C$ 的基暂时不动），
+矩阵里的这批零元就自动出现。三件事实合起来产生了它们：
+(i) $\hat h$ 保持 $S$ 与 $S^{\perp}$（第二部分）；
+(ii) $|e\rangle\in S$、$|e'\rangle\in S^{\perp}$（本部分，由 $\rho$ 的幂等性解出）；
+(iii) $K\subseteq S$、$C\subseteq S^{\perp}$（第三部分）。
+成键/反键变换的全部意义，就是把"属于 $S$ 的方向"和"属于 $S^{\perp}$ 的方向"
+各造出一条（$|e\rangle$ 与 $|e'\rangle$），让 (ii) 与 (i)、(iii) 对上号。
+
+\medskip
+\section*{第五部分：Lanczos 三对角化——把 $K$、$C$ 变成链，并让 $e$、$e'$ 只连链头}
+
+\noindent 本部分解决第四部分遗留的两个稠密问题：
+(i) $K$ 块与 $C$ 块内部还不是三对角；
+(ii) $|e\rangle$ 还连着\textbf{整条}价带 $K$，$|e'\rangle$ 还连着\textbf{整条}导带 $C$。
+
+解决办法是在 $K$ 内部、$C$ 内部分别做一次\textbf{幺正旋转}（Lanczos 三对角化），
+并利用\textbf{起始向量的选取}，让 $|e\rangle$ 只连 $v_1$、$|e'\rangle$ 只连 $d_1$。
+整个操作是"块内旋转"：不动 $|e\rangle$、$|e'\rangle$，不把 $K$ 与 $C$ 混起来，
+所以第三、四部分白得的所有零元\textbf{一个都不丢}。
+
+\subsection{一、基的记号与本部分目标}
+
+在第三、四部分的矩阵演示中，$K$ 与 $C$ 的基是谱分解给出的任意正交基。
+从本部分起把它们改记为
+\[
+|v_1^{\mathrm{old}}\rangle,\dots,|v_{N_v}^{\mathrm{old}}\rangle\in K,
+\qquad
+|d_1^{\mathrm{old}}\rangle,\dots,|d_{N_d}^{\mathrm{old}}\rangle\in C,
+\]
+（$N_v=n_\alpha-1$，$N_d=N_b-n_\alpha$），把记号 $|v_i\rangle,|d_j\rangle$
+留给 Lanczos 之后的新基。
+
+本部分要构造两组新基
+\[
+\{|v_i\rangle\}_{i=1}^{N_v}\subseteq K,\qquad
+\{|d_j\rangle\}_{j=1}^{N_d}\subseteq C ,
+\]
+各自仍分别是 $K$、$C$ 的正交归一基（即 $K$ 内、$C$ 内各做一次酉旋转），满足两个目标：
+
+\textbf{目标一（三对角）}：$\hat h$ 在 $K$ 块、$C$ 块内只有对角元与次对角元非零：
+\[
+\langle v_i|\hat h|v_j\rangle\neq0\quad\text{仅当 } |i-j|\le1,
+\qquad
+\langle d_i|\hat h|d_j\rangle\neq0\quad\text{仅当 } |i-j|\le1 .
+\]
+
+\textbf{目标二（单点耦合）}：$|e\rangle$ 只连 $v_1$、$|e'\rangle$ 只连 $d_1$：
+\[
+\langle v_1|\hat h|e\rangle\neq0,\qquad \langle v_i|\hat h|e\rangle=0\ (i\ge2);
+\]
+\[
+\langle d_1|\hat h|e'\rangle\neq0,\qquad \langle d_j|\hat h|e'\rangle=0\ (j\ge2).
+\]
+
+\textbf{目标二的关键技巧}：把 Lanczos 的\textbf{起始向量}取成
+"$\hat h|e\rangle$ 在 $K$ 内的分量（归一化）"与"$\hat h|e'\rangle$ 在 $C$ 内的分量（归一化）"。
+下面的演示会说明为什么这一个选择同时实现了两个目标。
+
+\textbf{已得零元的保持}：新基 $|v_i\rangle$ 是旧基 $|v_i^{\mathrm{old}}\rangle$ 的线性组合，
+仍完全躺在 $K$ 里；新基 $|d_j\rangle$ 仍完全躺在 $C$ 里。
+于是第三部分（$K$--$C$ 交叉元为零）、第四部分（$e'$ 与 $K$、$e$ 与 $C$、
+$e$ 与 $e'$ 之间为零）的结论\textbf{原样保持}，与基在 $K$、$C$ 内部怎么转无关。
+整个变换合起来是分块对角的酉变换
+\[
+1\oplus 1\oplus U_K\oplus U_C ,
+\]
+其中 $U_K,U_C$ 分别是 $K$、$C$ 内部的酉矩阵。
+
+\subsection{二、两种语言的翻译规则}
+
+Lanczos 的具体运算在"分量（坐标）语言"里最清楚；物理结论在"态矢/算符语言"
+里最清楚。两套语言用\textbf{同一个字母}，约定如下：
+
+\begin{itemize}
+\item \textbf{分量数组}：$\vec d_1,\vec d_2,\dots$（列向量，旧基下的坐标）；
+\item \textbf{矩阵}：$H_C$（旧基下的 $N_d\times N_d$ 矩阵）；
+\item \textbf{态矢}：$|d_1\rangle,|d_2\rangle,\dots$；
+\item \textbf{算符}：$\hat h$。
+\end{itemize}
+
+翻译规则三条：
+
+\textbf{规则一（分量即展开系数）}：列向量 $\vec d_1$ 的四个数，就是态矢 $|d_1\rangle$
+在旧基 $\{|\gamma_1\rangle,|\gamma_2\rangle,|\gamma_3\rangle,|\gamma_4\rangle\}$ 下的四个分量：
+\[
+|d_1\rangle=\sum_{i=1}^{4}(\vec d_1)_i\,|\gamma_i\rangle .
+\]
+
+\textbf{规则二（矩阵元即算符矩阵）}：矩阵 $H_C$ 的矩阵元，就是算符 $\hat h$ 在旧基下的矩阵表示：
+\[
+(H_C)_{ij}=\langle\gamma_i|\hat h|\gamma_j\rangle .
+\]
+
+\textbf{规则三（内积即点积）}：
+\[
+\langle d_1|d_3\rangle=\vec d_1^{\dagger}\vec d_3=\sum_i(\vec d_1)_i^{*}(\vec d_3)_i .
+\]
+
+同一件事的两种写法对照：
+
+\begin{center}
+\begin{tabular}{c|c}
+\toprule
+分量语言 & 态矢语言\\
+\midrule
+$H_C\vec d_1$（矩阵乘列向量） & $\hat h|d_1\rangle$（算符作用态矢）\\[2pt]
+$\vec d_1^{\dagger}H_C\vec d_3$（行向量·矩阵·列向量） & $\langle d_1|\hat h|d_3\rangle$\\[2pt]
+$\vec d_1^{\dagger}\vec d_3=0$（点积为零） & $\langle d_1|d_3\rangle=0$（正交）\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+特别说明：$\langle d_1|\hat h|d_3\rangle$ 既不是态矢也不是分量，而是一个\textbf{数}（标量）——
+把 $\vec d_1^{\dagger}$、$H_C$、$\vec d_3$ 三样东西乘出来。它出现在标量的位置上。
+
+\subsection{三、符号化的 Lanczos 过程（$C$ 块 4 维 + $e'$）}
+
+\textbf{（1）设定。}
+设 $C$ 的旧基为 $\{|\gamma_1\rangle,|\gamma_2\rangle,|\gamma_3\rangle,|\gamma_4\rangle\}$
+（正交归一，具体是谁不重要），$H_C$ 是 $\hat h$ 在此基下的 $4\times4$ 矩阵。
+$e'$ 与 $C$ 的耦合向量记作
+\[
+\vec w=(w_1,w_2,w_3,w_4)^{T},
+\qquad
+w_i=\langle\gamma_i|\hat h|e'\rangle .
+\]
+即：$\vec w$ 是 $\hat h|e'\rangle$ 在 $C$ 内的分量向量。
+注意 $\hat h|e'\rangle$ 落在 $S^{\perp}=C\oplus\mathrm{Span}\{|e'\rangle\}$ 里，
+它在 $C$ 内的部分就是 $\vec w$（在旧基下的坐标），其余部分沿着 $|e'\rangle$。
+
+\textbf{（2）第 0 步：起始向量对准耦合方向（关键技巧）。}
+\[
+\|\vec w\|=\sqrt{w_1^2+w_2^2+w_3^2+w_4^2},
+\qquad
+\vec d_1=\frac{\vec w}{\|\vec w\|} .
+\]
+这一步的含义后文再展开；先记住：$\vec d_1$ 与 $\vec w$ 平行。
+
+\textbf{（3）递推生成其余基矢。}
+\begin{align*}
+\vec r_2&=H_C\vec d_1-a_1\vec d_1,
+& a_1&=\vec d_1^{\dagger}H_C\vec d_1,\\
+b_1&=\|\vec r_2\|,
+& \vec d_2&=\frac{\vec r_2}{b_1},\\
+\vec r_3&=H_C\vec d_2-a_2\vec d_2-b_1\vec d_1,
+& a_2&=\vec d_2^{\dagger}H_C\vec d_2,\\
+b_2&=\|\vec r_3\|,
+& \vec d_3&=\frac{\vec r_3}{b_2},\\
+\vec r_4&=H_C\vec d_3-a_3\vec d_3-b_2\vec d_2,
+& a_3&=\vec d_3^{\dagger}H_C\vec d_3,\\
+b_3&=\|\vec r_4\|,
+& \vec d_4&=\frac{\vec r_4}{b_3},\\
+a_4&=\vec d_4^{\dagger}H_C\vec d_4 .
+\end{align*}
+至此两套符号定义完毕：$\{a_1,a_2,a_3,a_4\}$ 与 $\{b_1,b_2,b_3\}$。
+
+\textbf{（4）递推式本身保证的正交归一性。}
+每一步 $\vec r_{j+1}$ 先减掉所有已知分量（$\vec d_j$ 与 $\vec d_{j-1}$），
+再归一化。由归纳法：$\vec d_1,\vec d_2,\vec d_3,\vec d_4$ 是 $\mathbb{C}^4$ 的一组
+正交归一基。第四个向量之后没有第五步——在 4 维坐标空间里，四个正交归一向量的
+补空间是零，$\vec r_5$（若继续写）必为零向量。因此 $\{\vec d_1,\vec d_2,\vec d_3,\vec d_4\}$
+确实构成完整基。
+
+\subsection{四、新矩阵元的计算（全部符号）}
+
+\textbf{（1）三对角递推式。}
+由第（3）步的定义反解，得到 Lanczos 的\textbf{三项递推}：
+\[
+H_C\vec d_1=a_1\vec d_1+b_1\vec d_2 ,
+\]
+\[
+H_C\vec d_2=b_1\vec d_1+a_2\vec d_2+b_2\vec d_3 ,
+\]
+\[
+H_C\vec d_3=b_2\vec d_2+a_3\vec d_3+b_3\vec d_4 ,
+\]
+\[
+H_C\vec d_4=b_3\vec d_3+a_4\vec d_4 .
+\]
+（验证第一式：$\vec r_2=H_C\vec d_1-a_1\vec d_1$，而 $\vec r_2=b_1\vec d_2$，移项即得。
+其余同理。最后一式是 4 维空间里递推终止的形式。）
+
+\textbf{（2）对角元。}
+每个 $a_j$ 的定义就是新对角元：
+\[
+a_j=\vec d_j^{\dagger}H_C\vec d_j,
+\qquad\text{即}\qquad
+a_j=\langle d_j|\hat h|d_j\rangle .
+\]
+
+\textbf{（3）次对角元。}
+每个 $b_j$ 的定义就是新次对角元。用三项递推式验证：
+
+对第一式取 $\vec d_2^{\dagger}$：
+\[
+\vec d_2^{\dagger}H_C\vec d_1
+=
+a_1\,\vec d_2^{\dagger}\vec d_1+b_1\,\vec d_2^{\dagger}\vec d_2
+=
+0+b_1\cdot1
+=
+b_1 .
+\]
+对第二式取 $\vec d_3^{\dagger}$：
+\[
+\vec d_3^{\dagger}H_C\vec d_2
+=
+b_1\,\vec d_3^{\dagger}\vec d_1+a_2\,\vec d_3^{\dagger}\vec d_2+b_2\,\vec d_3^{\dagger}\vec d_3
+=
+0+0+b_2\cdot1
+=
+b_2 .
+\]
+对第三式取 $\vec d_4^{\dagger}$：
+\[
+\vec d_4^{\dagger}H_C\vec d_3
+=
+b_2\,\vec d_4^{\dagger}\vec d_2+a_3\,\vec d_4^{\dagger}\vec d_3+b_3\,\vec d_4^{\dagger}\vec d_4
+=
+b_3 .
+\]
+一般地，
+\[
+b_j=\vec d_{j+1}^{\dagger}H_C\vec d_j=\vec d_j^{\dagger}H_C\vec d_{j+1},
+\]
+（第二个等号来自 $H_C$ 厄米），即
+\[
+b_j=\langle d_{j+1}|\hat h|d_j\rangle=\langle d_j|\hat h|d_{j+1}\rangle .
+\]
+
+\textbf{（4）其余矩阵元严格为零（这才是"三对角"的实质）。}
+由三项递推式：$H_C\vec d_1$ 只含 $\vec d_1,\vec d_2$ 分量，
+$H_C\vec d_2$ 只含 $\vec d_1,\vec d_2,\vec d_3$ 分量，等等。因此
+
+与 $d_1$ 无第三邻：
+\[
+\vec d_3^{\dagger}H_C\vec d_1
+=
+\vec d_3^{\dagger}(a_1\vec d_1+b_1\vec d_2)
+=
+0 .
+\]
+与 $d_1$ 无第四邻：
+\[
+\vec d_4^{\dagger}H_C\vec d_1
+=
+0 .
+\]
+与 $d_2$ 无第四邻：
+\[
+\vec d_4^{\dagger}H_C\vec d_2
+=
+\vec d_4^{\dagger}(b_1\vec d_1+a_2\vec d_2+b_2\vec d_3)
+=
+0 .
+\]
+换成态矢语言：$\langle d_i|\hat h|d_j\rangle=0$ 当 $|i-j|\ge2$。\textbf{目标一达成。}
+
+\textbf{（5）组装新矩阵。}
+在新基 $\{\vec d_1,\vec d_2,\vec d_3,\vec d_4\}$ 下：
+\[
+H_C^{\mathrm{new}}
+=
+\begin{pmatrix}
+a_1 & b_1 & 0 & 0\\
+b_1 & a_2 & b_2 & 0\\
+0 & b_2 & a_3 & b_3\\
+0 & 0 & b_3 & a_4
+\end{pmatrix} .
+\]
+（对角元 $a_j$、次对角元 $b_j$ 一般互不相同，非零元位置如图所示。）
+
+\subsection{五、$e'$ 与新链的耦合（遥控机制）}
+
+\textbf{（1）第一条基矢与 $e'$ 的耦合。}
+\[
+t_1:=\vec d_1^{\dagger}\vec w
+=
+\frac{\vec w^{\dagger}\vec w}{\|\vec w\|}
+=
+\|\vec w\| .
+\]
+即
+\[
+\langle d_1|\hat h|e'\rangle=\|\vec w\|\neq0 .
+\]
+
+\textbf{（2）其余基矢与 $e'$ 的耦合。}
+对 $j=2,3,4$：
+\[
+t_j:=\vec d_j^{\dagger}\vec w .
+\]
+因为 $\vec w=\|\vec w\|\,\vec d_1$（第 0 步的定义），
+\[
+t_j=\|\vec w\|\,\vec d_j^{\dagger}\vec d_1
+=
+0
+\qquad(\vec d_j\perp\vec d_1).
+\]
+即
+\[
+\langle d_j|\hat h|e'\rangle=0,\qquad j=2,3,4 .
+\]
+
+\textbf{（3）为什么这一个选择同时实现了两个目标（遥控机制的解释）。}
+第 0 步把 $\vec d_1$ 取成 $\vec w$ 的方向，效果是：
+$\hat h|e'\rangle$ 在 $C$ 内的分量\textbf{全部}落在 $\vec d_1$ 方向上；
+而 Lanczos 的递推保证其余基矢 $\vec d_2,\vec d_3,\vec d_4$ 都与 $\vec d_1$ 正交。
+两件事合起来：$e'$ 与 $C$ 的耦合被"对准"到新链的第一节，
+链上的其余成员由正交性与 $e'$ 生而无关。
+
+这不是"事后把非零元改成零"，而是"从第一秒起就让 $d_2,d_3,d_4$ 与 $e'$ 无耦合"：
+起始向量的一个选择，同时干了三对角化（递推的第一块砖）和单点耦合（对准方向）两件事。
+$t_1=\|\vec w\|$ 正是被保留的链头耦合，它把 $e'$ 与导带链之间的全部耦合强度
+（$\vec w$ 的模）集中到 $d_1$ 这一个点上——总强度没有丢，只是重新分配。
+
+\subsection{六、$K$ 块同理（一般维度）}
+
+$K$ 块的做法与 $C$ 块逐字相同，只换字母：旧基
+$\{|v_1^{\mathrm{old}}\rangle,\dots,|v_{N_v}^{\mathrm{old}}\rangle\}$，
+$K$--$K$ 块矩阵 $H_K$（矩阵元 $\langle v_i^{\mathrm{old}}|\hat h|v_j^{\mathrm{old}}\rangle$），
+耦合向量
+\[
+\vec u=(u_1,\dots,u_{N_v})^{T},
+\qquad
+u_i=\langle v_i^{\mathrm{old}}|\hat h|e\rangle .
+\]
+起始向量取
+\[
+\vec v_1=\frac{\vec u}{\|\vec u\|} ,
+\]
+随后按三项递推生成 $\vec v_2,\dots,\vec v_{N_v}$（共 $N_v$ 步，最后一步的剩余向量自动为零）。
+结果为：
+
+$K$ 块三对角，记对角元 $\tilde a_i=\langle v_i|\hat h|v_i\rangle$、
+次对角元 $\tilde b_i=\langle v_{i+1}|\hat h|v_i\rangle$；
+
+$e$ 与价带链的耦合：
+\[
+\langle v_1|\hat h|e\rangle=\|\vec u\|,\qquad
+\langle v_i|\hat h|e\rangle=0\ (i\ge2).
+\]
+
+注意维度的一般性：$N_v=n_\alpha-1$ 可以是任意数。$N_v=1$ 时没有次对角元、
+$e$ 只连唯一的 $v_1$（递推一步即止）；$N_v=2$ 时恰如前面的 $2\times2$ 演示；
+$N_v$ 更大时递推多走几步，机制完全一样。
+
+\subsection{七、本部分完成后的矩阵形状（8 维演示更新）}
+
+在基
+\[
+\big\{|e\rangle,\ |e'\rangle,\ v_1,\ v_2,\ d_1,\ d_2,\ d_3,\ d_4\big\}
+\]
+下（$v_1,v_2$ 是 Lanczos 后的价带链基，$d_1,\dots,d_4$ 是 Lanczos 后的导带链基），
+$\hat h$ 的矩阵形状为（$\times=$ 一般非零，$0=$ 严格零；
+对角、次对角位置的具体数值见上面的符号结果）：
+
+\[
+\begin{array}{c|cccccccc}
+ & |e\rangle & |e'\rangle & v_1 & v_2 & d_1 & d_2 & d_3 & d_4\\[2pt]
+\hline
+|e\rangle & \times & 0 & \times & 0 & 0 & 0 & 0 & 0\\[2pt]
+|e'\rangle & 0 & \times & 0 & 0 & \times & 0 & 0 & 0\\[2pt]
+v_1 & \times & 0 & \times & \times & 0 & 0 & 0 & 0\\[2pt]
+v_2 & 0 & 0 & \times & \times & 0 & 0 & 0 & 0\\[2pt]
+d_1 & 0 & \times & 0 & 0 & \times & \times & 0 & 0\\[2pt]
+d_2 & 0 & 0 & 0 & 0 & \times & \times & \times & 0\\[2pt]
+d_3 & 0 & 0 & 0 & 0 & 0 & \times & \times & \times\\[2pt]
+d_4 & 0 & 0 & 0 & 0 & 0 & 0 & \times & \times
+\end{array}
+\]
+
+逐块解读：
+
+\begin{itemize}
+\item \textbf{左上}：$|e\rangle$--$|e\rangle$（即 $h_e=\langle e|\hat h|e\rangle$）非零；
+$|e\rangle$ 与 $|e'\rangle$ 之间为零（第四部分成果）。
+\item \textbf{$e$ 行（列）}：只剩 $v_1$ 一个非零元
+（即 $\|\vec u\|=\langle v_1|\hat h|e\rangle$），$v_2$ 与全部 $d_j$ 为零。
+\item \textbf{$e'$ 行（列）}：只剩 $d_1$ 一个非零元（即 $\|\vec w\|$），
+全部 $v_i$ 与 $d_2,d_3,d_4$ 为零。
+\item \textbf{$K$ 块}：$2\times2$ 三对角（对角 $\tilde a_1,\tilde a_2$，次对角 $\tilde b_1$）。
+\item \textbf{$C$ 块}：$4\times4$ 三对角（对角 $a_1,\dots,a_4$，次对角 $b_1,b_2,b_3$）。
+\item \textbf{交叉块}：$v$ 与 $d$ 之间全是零（第三部分成果，本部分旋转未触碰）。
+\end{itemize}
+
+两个子问题至此彻底分家且各自成链：
+小问题一 $=\{|e\rangle\}\cup\{v_1,\dots,v_{N_v}\}$，
+小问题二 $=\{|e'\rangle\}\cup\{d_1,\dots,d_{N_d}\}$，
+每个子问题都是"端点只连链头 + 链内最近邻"的标准形状。
+
+\medskip
+\section*{第六部分：逆成键/反键变换——最终的 $\hat h$ 矩阵与自然轨道基哈密顿量}
+
+\noindent 本部分是构造流程的最后一步。第五部分完成后，矩阵在"成键基"
+\[
+\big\{|e\rangle,\ |e'\rangle,\ v_1,\dots,v_{N_v},\ d_1,\dots,d_{N_d}\big\}
+\]
+下已经具有最简洁的形状：两个互不干扰的链状小问题。但物理上我们希望回到
+$\{|0\rangle,|b\rangle\}$（杂质与活性）来描述。做法是第四部分的成键旋转
+$W$ 的\textbf{逆}——由于 $W$ 自逆，逆变换与正变换用同一个矩阵。
+本部分逐元算出反变换后的矩阵元，写出最终矩阵与自然轨道基下的
+$\hat H_{\mathrm{one}}^{(\alpha)}$ 全式，并验证零元结构与守恒关系。
+
+\subsection{一、成键变换与反变换的符号定义}
+
+成键变换（第四部分已建立）是 $2\times2$ 旋转：
+\[
+|e\rangle=\alpha|0\rangle+\beta|b\rangle,
+\qquad
+|e'\rangle=\beta|0\rangle-\alpha|b\rangle ,
+\]
+系数条件
+\[
+\alpha^2+\beta^2=1,
+\qquad
+\alpha^2=n_{\mathrm{imp}},\quad \beta^2=1-n_{\mathrm{imp}} .
+\]
+矩阵形式（把 $|0\rangle,|b\rangle$ 转到 $|e\rangle,|e'\rangle$）：
+\[
+\big(|e\rangle,\ |e'\rangle\big)
+=
+\big(|0\rangle,\ |b\rangle\big)
+\,
+W ,
+\qquad
+W=
+\begin{pmatrix}
+\alpha & \beta\\
+\beta & -\alpha
+\end{pmatrix} .
+\]
+$W$ 是实对称矩阵，且第四部分已验证
+\[
+W^2=
+\begin{pmatrix}
+\alpha^2+\beta^2 & \alpha\beta-\beta\alpha\\
+\beta\alpha-\alpha\beta & \beta^2+\alpha^2
+\end{pmatrix}
+=
+\begin{pmatrix}1&0\\0&1\end{pmatrix} ,
+\]
+即 $W$ \textbf{自逆}：$W^{-1}=W$。因此反变换就是把同一组式子反过来读：
+\[
+|0\rangle=\alpha|e\rangle+\beta|e'\rangle,
+\qquad
+|b\rangle=\beta|e\rangle-\alpha|e'\rangle .
+\]
+注意：反变换\textbf{只动前两个基矢}，$v$ 链、$d$ 链的基原样保留。
+所以它是 $(\alpha,\beta)$ 这对系数的第二次出场，不是新的自由度。
+
+\subsection{二、反变换前的矩阵（第五部分的成果，改记链元素）}
+
+为衔接目标形式，先把第五部分的链元素统一改记：
+
+第五部分 $K$ 块的对角元 $\tilde a_i$、次对角元 $\tilde b_i$ 改记为
+\[
+e_{v,j}=\tilde a_j=\langle v_j|\hat h|v_j\rangle,
+\qquad
+t_{v,j}=\tilde b_j=\langle v_{j+1}|\hat h|v_j\rangle;
+\]
+$C$ 块的对角元 $a_j$、次对角元 $b_j$ 改记为
+\[
+e_{d,j}=a_j=\langle d_j|\hat h|d_j\rangle,
+\qquad
+t_{d,j}=b_j=\langle d_{j+1}|\hat h|d_j\rangle .
+\]
+链头耦合同样改名：
+\[
+T_{ev}:=\|\vec u\|=\langle v_1|\hat h|e\rangle,
+\qquad
+T_{e'd}:=\|\vec w\|=\langle d_1|\hat h|e'\rangle .
+\]
+对角元再记
+\[
+h_e=\langle e|\hat h|e\rangle,
+\qquad
+h_{e'}=\langle e'|\hat h|e'\rangle .
+\]
+
+于是反变换前，$\hat h$ 在成键基下的非零元清单为：
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+符号 & 含义\\
+\midrule
+$h_e,\ h_{e'}$ & $e$、$e'$ 的 onsite 能\\
+$T_{ev}$ & $e$ 与 $v_1$ 的耦合（$e$ 只连 $v_1$）\\
+$T_{e'd}$ & $e'$ 与 $d_1$ 的耦合（$e'$ 只连 $d_1$）\\
+$e_{v,j},\ t_{v,j}$ & 价带链对角元、次对角元\\
+$e_{d,j},\ t_{d,j}$ & 导带链对角元、次对角元\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+且下列矩阵元严格为零（第三、四部分成果，第五部分保持）：
+\[
+\langle e|\hat h|e'\rangle=0,\qquad
+\langle d_j|\hat h|e\rangle=0\ \forall j,\qquad
+\langle v_i|\hat h|e'\rangle=0\ \forall i,
+\]
+\[
+\langle d_j|\hat h|v_i\rangle=0\ \forall i,j,\qquad
+\langle v_i|\hat h|e\rangle=0\ (i\ge2),\qquad
+\langle d_j|\hat h|e'\rangle=0\ (j\ge2).
+\]
+
+\subsection{三、逐项计算反变换后的矩阵元}
+
+\textbf{（1）杂质 onsite 能 $\mu$。}
+\[
+\langle0|\hat h|0\rangle
+=
+\langle \alpha e+\beta e'|\,\hat h\,|\alpha e+\beta e'\rangle .
+\]
+展开成四项：
+\[
+=
+\alpha^2 h_e+\beta^2 h_{e'}
++\alpha\beta\Big(\langle e|\hat h|e'\rangle+\langle e'|\hat h|e\rangle\Big) .
+\]
+交叉项 $\langle e|\hat h|e'\rangle=0$，故
+\[
+\mu=\alpha^2 h_e+\beta^2 h_{e'} .
+\]
+
+\textbf{（2）活性 onsite 能 $\epsilon_b$。}
+\[
+\langle b|\hat h|b\rangle
+=
+\langle \beta e-\alpha e'|\,\hat h\,|\beta e-\alpha e'\rangle
+=
+\beta^2 h_e+\alpha^2 h_{e'}
+-\alpha\beta\Big(\langle e|\hat h|e'\rangle+\langle e'|\hat h|e\rangle\Big) ,
+\]
+交叉项为零，故
+\[
+\epsilon_b=\beta^2 h_e+\alpha^2 h_{e'} .
+\]
+
+\textbf{（3）杂质--活性互连 $t_{0b}$。}
+\[
+\langle0|\hat h|b\rangle
+=
+\langle \alpha e+\beta e'|\,\hat h\,|\beta e-\alpha e'\rangle .
+\]
+展开：
+\[
+=
+\alpha\beta\,h_e-\alpha\beta\,h_{e'}
++\alpha^2\langle e'|\hat h|e\rangle-\beta^2\langle e|\hat h|e'\rangle .
+\]
+后两项为零，故
+\[
+t_{0b}=\alpha\beta\,(h_e-h_{e'}) .
+\]
+
+\textbf{（4）杂质、活性与两条链头的耦合。}
+
+杂质与导带链头：
+\[
+\langle d_1|\hat h|0\rangle
+=
+\langle d_1|\hat h|\alpha e+\beta e'\rangle
+=
+\alpha\underbrace{\langle d_1|\hat h|e\rangle}_{=0}
++\beta\underbrace{\langle d_1|\hat h|e'\rangle}_{=T_{e'd}}
+=
+\beta\,T_{e'd} .
+\]
+即
+\[
+t_{0d}=\beta\,T_{e'd} .
+\]
+
+活性与导带链头：
+\[
+\langle d_1|\hat h|b\rangle
+=
+\langle d_1|\hat h|\beta e-\alpha e'\rangle
+=
+\beta\underbrace{\langle d_1|\hat h|e\rangle}_{=0}
+-\alpha\underbrace{\langle d_1|\hat h|e'\rangle}_{=T_{e'd}}
+=
+-\alpha\,T_{e'd} .
+\]
+即
+\[
+t_{bd}=-\alpha\,T_{e'd} .
+\]
+
+杂质与价带链头：
+\[
+\langle v_1|\hat h|0\rangle
+=
+\alpha\underbrace{\langle v_1|\hat h|e\rangle}_{=T_{ev}}
++\beta\underbrace{\langle v_1|\hat h|e'\rangle}_{=0}
+=
+\alpha\,T_{ev} .
+\]
+即
+\[
+t_{0v}=\alpha\,T_{ev} .
+\]
+
+活性与价带链头：
+\[
+\langle v_1|\hat h|b\rangle
+=
+\beta\underbrace{\langle v_1|\hat h|e\rangle}_{=T_{ev}}
+-\alpha\underbrace{\langle v_1|\hat h|e'\rangle}_{=0}
+=
+\beta\,T_{ev} .
+\]
+即
+\[
+t_{bv}=\beta\,T_{ev} .
+\]
+
+\textbf{（5）链内矩阵元完全不变。}
+反变换不触碰 $v$ 链、$d$ 链，故
+\[
+e_{v,j},\ t_{v,j},\ e_{d,j},\ t_{d,j}
+\]
+原样保留。
+
+\textbf{（6）结果汇总。}
+\[
+\boxed{\;
+\begin{aligned}
+\mu&=\alpha^2 h_e+\beta^2 h_{e'} ,\\
+\epsilon_b&=\beta^2 h_e+\alpha^2 h_{e'} ,\\
+t_{0b}&=\alpha\beta\,(h_e-h_{e'}) ,\\
+t_{0v}&=\alpha\,T_{ev},\qquad t_{bv}=\beta\,T_{ev} ,\\
+t_{0d}&=\beta\,T_{e'd},\qquad t_{bd}=-\alpha\,T_{e'd} .
+\end{aligned}\;}
+\]
+
+\subsection{四、为什么第 $0$ 行、$b$ 行各只剩四个非零元}
+
+逐位检查。对 $j\ge2$：
+\[
+\langle0|\hat h|v_j\rangle
+=
+\alpha\langle v_j|\hat h|e\rangle+\beta\langle v_j|\hat h|e'\rangle
+=
+0+0=0 ,
+\]
+（第一项仅在 $j=1$ 时非零，为 $T_{ev}$；第二项恒零。）
+\[
+\langle0|\hat h|d_j\rangle
+=
+\alpha\langle d_j|\hat h|e\rangle+\beta\langle d_j|\hat h|e'\rangle
+=
+0 ,
+\]
+（第一项恒零；第二项仅在 $j=1$ 时非零，为 $T_{e'd}$。）
+对 $|b\rangle$ 同理：
+\[
+\langle b|\hat h|v_j\rangle=0\ (j\ge2),\qquad
+\langle b|\hat h|d_j\rangle=0\ (j\ge2) .
+\]
+所以第 $0$ 行、第 $b$ 行的非零位置只有
+$|0\rangle,|b\rangle,v_1,d_1$ 四处；$v$ 与 $d$ 之间的交叉元
+在第三部分已为零；链内元在第五部分已三对角化。
+
+\textbf{守恒检验（旋转不丢耦合强度）}：由 $t_{0v}=\alpha T_{ev}$、$t_{bv}=\beta T_{ev}$：
+\[
+t_{0v}^2+t_{bv}^2=(\alpha^2+\beta^2)T_{ev}^2=T_{ev}^2 ,
+\]
+由 $t_{0d}=\beta T_{e'd}$、$t_{bd}=-\alpha T_{e'd}$：
+\[
+t_{0d}^2+t_{bd}^2=(\alpha^2+\beta^2)T_{e'd}^2=T_{e'd}^2 .
+\]
+反变换只是把 $e$（$e'$）的链头耦合在 $|0\rangle$ 与 $|b\rangle$ 两个方向上重新分配，
+总强度不变。$2\times2$ 块的迹同样守恒：
+\[
+\mu+\epsilon_b=(\alpha^2+\beta^2)h_e+(\beta^2+\alpha^2)h_{e'}=h_e+h_{e'} .
+\]
+整个变换是相似变换（酉），$\hat h$ 的谱在每一步都不变。
+
+\subsection{五、最终的 $\hat h$ 矩阵}
+
+在自然轨道基
+\[
+\big\{|0\rangle,\ |b\rangle,\ v_1,\dots,v_{N_v},\ d_1,\dots,d_{N_d}\big\}
+\]
+（共 $1+1+N_v+N_d=N_b+1$ 维，$N_v=n_\alpha-1$，$N_d=N_b-n_\alpha$）下，
+$\hat h$ 的分块形式为
+\[
+h_{\mathrm{NO}}
+=
+\begin{pmatrix}
+\mu & t_{0b} & t_{0v}\,\mathbf e_1^{\mathrm T} & t_{0d}\,\mathbf e_1^{\mathrm T}\\[4pt]
+t_{0b} & \epsilon_b & t_{bv}\,\mathbf e_1^{\mathrm T} & t_{bd}\,\mathbf e_1^{\mathrm T}\\[4pt]
+t_{0v}\,\mathbf e_1 & t_{bv}\,\mathbf e_1 & T_v & 0\\[4pt]
+t_{0d}\,\mathbf e_1 & t_{bd}\,\mathbf e_1 & 0 & T_d
+\end{pmatrix} ,
+\]
+其中 $\mathbf e_1=(1,0,\dots,0)^{\mathrm T}$ 是"只取链头"的列向量，
+$T_v$、$T_d$ 是三对角矩阵：
+\[
+T_v=
+\begin{pmatrix}
+e_{v_1} & t_{v_1} & 0 & \cdots & 0\\
+t_{v_1} & e_{v_2} & t_{v_2} & \cdots & 0\\
+0 & t_{v_2} & e_{v_3} & \ddots & \vdots\\
+\vdots & \vdots & \ddots & \ddots & t_{v,N_v-1}\\
+0 & 0 & \cdots & t_{v,N_v-1} & e_{v,N_v}
+\end{pmatrix} ,
+\]
+$T_d$ 同形（下标换成 $d$，维度 $N_d$）。
+
+\textbf{8 维实例}（$N_b=7,\ n_\alpha=3$，$N_v=2,\ N_d=4$）的完整显式矩阵：
+
+\[
+\begin{array}{c|cccccccc}
+ & |0\rangle & |b\rangle & v_1 & v_2 & d_1 & d_2 & d_3 & d_4\\[2pt]
+\hline
+|0\rangle & \mu & t_{0b} & t_{0v} & 0 & t_{0d} & 0 & 0 & 0\\[2pt]
+|b\rangle & t_{0b} & \epsilon_b & t_{bv} & 0 & t_{bd} & 0 & 0 & 0\\[2pt]
+v_1 & t_{0v} & t_{bv} & e_{v_1} & t_{v_1} & 0 & 0 & 0 & 0\\[2pt]
+v_2 & 0 & 0 & t_{v_1} & e_{v_2} & 0 & 0 & 0 & 0\\[2pt]
+d_1 & t_{0d} & t_{bd} & 0 & 0 & e_{d_1} & t_{d_1} & 0 & 0\\[2pt]
+d_2 & 0 & 0 & 0 & 0 & t_{d_1} & e_{d_2} & t_{d_2} & 0\\[2pt]
+d_3 & 0 & 0 & 0 & 0 & 0 & t_{d_2} & e_{d_3} & t_{d_3}\\[2pt]
+d_4 & 0 & 0 & 0 & 0 & 0 & 0 & t_{d_3} & e_{d_4}
+\end{array}
+\]
+
+逐块确认：
+
+\begin{itemize}
+\item 左上 $2\times2$：杂质--活性块 $\begin{pmatrix}\mu&t_{0b}\\ t_{0b}&\epsilon_b\end{pmatrix}$；
+\item 第 $0$、$b$ 两行（列）只与 $v_1$、$d_1$ 有非零元——链头单点耦合；
+\item $v$ 块 $2\times2$、$d$ 块 $4\times4$ 三对角；
+\item $v$--$d$ 交叉块全部为零——价带与导带完全解耦。
+\end{itemize}
+
+\subsection{六、自然轨道基下的 $\hat H_{\mathrm{one}}^{(\alpha)}$ 全式}
+
+由矩阵与算符的对应 $\hat H_{\mathrm{one}}^{(\alpha)}=\sum_{i,j}(h_{\mathrm{NO}})_{ij}\,\hat c_i^{\dagger}\hat c_j$
+（$\hat c_i$ 取遍 $|0\rangle,|b\rangle,v_j,d_j$ 对应的产生算符），读出
+\[
+\begin{aligned}
+\hat H_{\mathrm{one}}^{(\alpha)}
+={}&
+\mu\,\hat c_0^\dagger \hat c_0
++\epsilon_b\,\hat b^\dagger \hat b
++t_{0b}\big(\hat c_0^\dagger \hat b+\hat b^\dagger \hat c_0\big)\\
+&
++t_{0v}\big(\hat c_0^\dagger \hat v_1+\hat v_1^\dagger \hat c_0\big)
++t_{bv}\big(\hat b^\dagger \hat v_1+\hat v_1^\dagger \hat b\big)\\
+&
++t_{0d}\big(\hat c_0^\dagger \hat d_1+\hat d_1^\dagger \hat c_0\big)
++t_{bd}\big(\hat b^\dagger \hat d_1+\hat d_1^\dagger \hat b\big)\\
+&
++\sum_{j=1}^{N_v}e_{v_j}\,\hat v_j^\dagger \hat v_j
++\sum_{j=1}^{N_v-1}t_{v_j}\big(\hat v_j^\dagger \hat v_{j+1}+\hat v_{j+1}^\dagger \hat v_j\big)\\
+&
++\sum_{j=1}^{N_d}e_{d_j}\,\hat d_j^\dagger \hat d_j
++\sum_{j=1}^{N_d-1}t_{d_j}\big(\hat d_j^\dagger \hat d_{j+1}+\hat d_{j+1}^\dagger \hat d_j\big) .
+\end{aligned}
+\]
+各项含义（按顺序）：杂质 onsite；活性 onsite；杂质--活性 hopping；
+杂质、活性与价带链头 $v_1$ 的两个 hopping；杂质、活性与导带链头 $d_1$ 的两个
+hopping（注意 $t_{bd}$ 相对符号）；价带链、导带链各自的 onsite 与最近邻 hopping。
+
+\textbf{四体项原封不动}：整个构造过程中，$|0\rangle$ 从未被旋转
+（成键/反键只是中途装置，$W^2=I$ 保证净效果下 $|0\rangle$ 回到原地）。
+因此 $\hat H_{\mathrm{four}}$（只含 $c_{0,m,\sigma}$）在自然轨道基下\textbf{逐字不变}：
+\[
+\hat H_{\mathrm{four}}^{\mathrm{(NO)}}=\hat H_{\mathrm{four}}^{\mathrm{(chain)}} .
+\]
+对每个 $\alpha$ 做完上述构造后，总哈密顿量为
+\[
+\hat H=\hat H_{\mathrm{four}}+\sum_\alpha\hat H_{\mathrm{one}}^{(\alpha)} ,
+\]
+这就是喂给求解器的自然轨道基杂质模型。
+
+\medskip
+\noindent\textbf{构造流程至此完成}。回顾全流程：
+链基 $\to$（对角化 $h^\alpha$）能量基与占据子空间 $S$
+$\to$（密度矩阵）$K$、$C$、$b$
+$\to$（成键/反键）$e$、$e'$ 劈开矩阵
+$\to$（双 Lanczos）两条链 + 链头单点耦合
+$\to$（反变换）最终目标矩阵。
+每一步都是酉变换或严格推导，$\hat h$ 的谱全程不变，$|0\rangle$ 全程冻结，
+$\hat H_{\mathrm{four}}$ 全程不动。
+
+\section*{总结：自然轨道基构造流程（一张图）}
+
+\noindent 全流程共九步：五个状态（方块）与四步变换（箭头），
+蛇形排成两列（左五右四），顺序为
+方块 $1\to$ 箭头 $1\to$ 方块 $2\to$ 箭头 $2\to$ 方块 $3\to$ 箭头 $3\to$
+方块 $4\to$ 箭头 $4\to$ 方块 $5$。
+每步都是酉变换或严格推导：$\hat h^\alpha$ 的谱不变，$|0\rangle$ 全程冻结，
+$\hat H_{\mathrm{four}}$ 全程不动。
+
+\begin{center}
+\begin{tikzpicture}[
+  state/.style={rectangle, draw, thick, rounded corners=2pt,
+                align=center, text width=6.3cm, inner sep=4pt,
+                font=\footnotesize},
+  opstep/.style={rectangle, draw, rounded corners=2pt, fill=gray!10,
+                 align=left, text width=6.3cm, inner sep=4pt,
+                 font=\footnotesize},
+  arr/.style={-stealth, thick},
+]
+
+% ================= 左列五框（状态） =================
+\node[state] (B1) at (-4.9,0) {
+  \textbf{方块 1：原始链基}\\[1pt]
+  $\mathcal{H}_1^\alpha=\mathcal{H}_{1,\mathrm{imp}}^\alpha
+  \oplus\mathcal{H}_{1,\mathrm{bath}}^\alpha$\\[1pt]
+  基：$\{|i\rangle_c\}_{i=0}^{N_b}$\\[1pt]
+  $\hat h^\alpha$：三对角链形态
+};
+
+\node[state] (B2) at (-4.9,-4.6) {
+  \textbf{方块 2：浴子空间三分}\\[1pt]
+  $\mathcal{H}_{1,\mathrm{bath}}^\alpha=\mathrm{Span}\{|b\rangle\}\oplus K\oplus C$\\[1pt]
+  基：$\{|0\rangle,|b\rangle,|v_i^{\mathrm{old}}\rangle_{i=1}^{N_v},
+  |d_j^{\mathrm{old}}\rangle_{j=1}^{N_d}\}$\\[1pt]
+  $\hat h^\alpha$：$K$--$C$ 交叉块为零
+};
+
+\node[state] (B3) at (-4.9,-9.2) {
+  \textbf{方块 3：成键基，问题劈成两个}\\[1pt]
+  基：$\{|e\rangle,|e'\rangle,|v_i^{\mathrm{old}}\rangle_{i=1}^{N_v},
+  |d_j^{\mathrm{old}}\rangle_{j=1}^{N_d}\}$\\[1pt]
+  $\hat h^\alpha$：$e$--$C$、$e'$--$K$、$e$--$e'$ 块为零\\
+  $\Rightarrow$ 劈成 $\{e\}\cup K$ 与 $\{e'\}\cup C$ 两个独立子问题
+};
+
+\node[state] (B4) at (-4.9,-13.8) {
+  \textbf{方块 4：链化完成}\\[1pt]
+  基：$\{|e\rangle,|e'\rangle,|v_i\rangle_{i=1}^{N_v},|d_j\rangle_{j=1}^{N_d}\}$\\[1pt]
+  $\hat h^\alpha$：$K$ 块、$C$ 块三对角；\\
+  $e$ 只连 $v_1$，$e'$ 只连 $d_1$
+};
+
+\node[state] (B5) at (-4.9,-18.4) {
+  \textbf{方块 5：自然轨道基（最终形态）}\\[1pt]
+  基：$\{|0\rangle,|b\rangle,|v_i\rangle_{i=1}^{N_v},|d_j\rangle_{j=1}^{N_d}\}$\\[1pt]
+  $\hat h^\alpha$：杂质--活性 $2\times2$ 块 $+$ 两条三对角链 $+$ 链头单点耦合\\[1pt]
+  由这组基诱导新产生/湮灭算符 $\Rightarrow$ 最终 $\hat H_{\mathrm{one}}^{(\alpha)}$；\\
+  $\hat H_{\mathrm{four}}$ 因 $|0\rangle$ 全程冻结而逐字不变
+};
+
+% ================= 右列四框（变换步骤） =================
+\node[opstep] (A1) at (4.9,-0.4) {
+  \textbf{箭头 1}\\
+  由 $\hat H_{\mathrm{one}}^\alpha$ 诱导出谱结构相同的\\
+  $\hat h^\alpha$ 与 $\hat\rho^\alpha$；\\
+  取 $\hat\rho^\alpha$ 的浴--浴部分谱分解：\\
+  本征值 $1$：$K$（价带）\\
+  本征值 $1-n_{\mathrm{imp}}$：$|b\rangle$（活性）\\
+  本征值 $0$：$C$（导带）
+};
+
+\node[opstep] (A2) at (4.9,-5.0) {
+  \textbf{箭头 2}\\
+  成键/反键变换（$2\times2$ 旋转 $W$），\\
+  在 $\mathrm{Span}\{|0\rangle,|b\rangle\}$ 内使 $\hat\rho^\alpha$ 对角化：\\
+  $|e\rangle=\alpha|0\rangle+\beta|b\rangle\in S$，\\
+  $|e'\rangle=\beta|0\rangle-\alpha|b\rangle\in S^{\perp}$，\\
+  $\alpha^2=n_{\mathrm{imp}}$，$\beta^2=1-n_{\mathrm{imp}}$
+};
+
+\node[opstep] (A3) at (4.9,-9.6) {
+  \textbf{箭头 3}\\
+  $K$ 内、$C$ 内分别做 Lanczos 三对角化；\\
+  起始向量取（归一化后的）\\
+  $\hat h|e\rangle$ 在 $K$ 内的部分、\\
+  $\hat h|e'\rangle$ 在 $C$ 内的部分，\\
+  使 $e$、$e'$ 只连链头 $v_1$、$d_1$
+};
+
+\node[opstep] (A4) at (4.9,-14.2) {
+  \textbf{箭头 4}\\
+  逆成键/反键变换（$W$ 自逆）：\\
+  $|0\rangle=\alpha|e\rangle+\beta|e'\rangle$，\\
+  $|b\rangle=\beta|e\rangle-\alpha|e'\rangle$；\\
+  新增连接 $0$--$b$、$0$--$v_1$、$b$--$v_1$、\\
+  $0$--$d_1$、$b$--$d_1$
+};
+
+% ================= 蛇形连接线 =================
+\draw[arr] (B1.east) -- (A1.west);
+\draw[arr] (A1.south) -- (B2.north);
+\draw[arr] (B2.east) -- (A2.west);
+\draw[arr] (A2.south) -- (B3.north);
+\draw[arr] (B3.east) -- (A3.west);
+\draw[arr] (A3.south) -- (B4.north);
+\draw[arr] (B4.east) -- (A4.west);
+\draw[arr] (A4.south) -- (B5.north);
+
+\end{tikzpicture}
+\end{center}
+
+\noindent 各级要点：
+
+\begin{itemize}
+\item \textbf{箭头 1}（方块 1 $\to$ 方块 2）：由 $\hat H_{\mathrm{one}}^\alpha$
+诱导出谱结构相同的 $\hat h^\alpha$ 与 $\hat\rho^\alpha$；取 $\hat\rho^\alpha$ 的
+浴--浴部分做谱分解，把浴子空间拆成活性、价带、导带三块。
+\item \textbf{箭头 2}（方块 2 $\to$ 方块 3）：成键/反键变换 $W$ 在
+$\mathrm{Span}\{|0\rangle,|b\rangle\}$ 内使 $\hat\rho^\alpha$ 对角化，造出
+$|e\rangle\in S$ 与 $|e'\rangle\in S^{\perp}$，矩阵劈成两个独立子问题。
+\item \textbf{箭头 3}（方块 3 $\to$ 方块 4）：$K$ 内、$C$ 内分别做 Lanczos
+三对角化，起始向量对准耦合方向，使链头单点耦合与链内三对角一步完成。
+\item \textbf{箭头 4}（方块 4 $\to$ 方块 5）：逆成键/反键变换（$W$ 自逆）
+回到杂质--活性描述，杂质与活性同时只连两条链的链头，得到最终自然轨道基。
+\end{itemize}
+
+\noindent 至此，从原始链基到自然轨道基的完整构造路线收束完毕。
+\end{document}

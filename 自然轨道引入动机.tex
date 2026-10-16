@@ -1,0 +1,390 @@
+\documentclass[11pt]{ctexart}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{enumitem}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.5em}
+
+\title{自然轨道的引入动机}
+\author{chaoran Yang}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\textbf{设定：}一维晶格，$N$ 个格点，填充 $M$ 个无自旋费米子。
+希尔伯特空间为 Fock 空间
+$\mathcal{F}=\bigoplus_{n=0}^{N}\mathcal{H}_n$，
+其中 $\mathcal{H}_n$ 是 $n$ 粒子子空间。
+哈密顿量 $H$ 一般地可含相互作用。
+\end{center}
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.8em]
+
+\item \textbf{原始格点基下的困难。}
+哈密顿量在格点占据数表象（即原始的 chain／格点基）下，
+其基态一般需要由全部 $C_N^M$ 个构型线性表出。
+寻找这个基态，是一个在指数维希尔伯特空间中的本征值问题，无法直接求解。
+这构成了整个问题的出发点。
+
+\item \textbf{Fock 空间与单粒子子空间的关系。}
+整个 Fock 空间 $\mathcal{F}=\bigoplus_{n=0}^{N}\mathcal{H}_n$，
+以及其中 $M$ 粒子子空间 $\mathcal{H}_M$ 的基矢，
+都可以由产生算符 $c_i^{\dagger}$ 构造出来：
+\[
+|s\rangle=(c_1^{\dagger})^{n_1}(c_2^{\dagger})^{n_2}\cdots(c_N^{\dagger})^{n_N}|0\rangle,
+\qquad n_i\in\{0,1\},\quad \sum_{i=1}^{N}n_i=M .
+\]
+这样的每一个基矢 $|s\rangle$ 称为一个\textbf{占据数构型}（简称构型）。
+而 $c_i$ 本身由单粒子子空间 $\mathcal{H}_1$ 的基矢与真空态定义：
+\[
+|i\rangle=c_i^{\dagger}|0\rangle ,
+\]
+即 $|i\rangle$ 表示“第 $i$ 个格点被一个粒子占据”的态。
+单粒子子空间 $\mathcal{H}_1$ 的一组正交归一基就是
+$\{|1\rangle,|2\rangle,\dots,|N\rangle\}$，其维数恰为 $N$。
+
+\item \textbf{核心动机：寻找一组使基态分量更少的单粒子基。}
+我们希望在单粒子子空间 $\mathcal{H}_1$ 里找到一组新的正交归一基，
+由它定义出新的产生、湮灭算符 $q_g^{\dagger},q_g$，
+使得哈密顿量 $H$ 的基态 $|\Psi_0\rangle$，
+在由 $q$ 重新构造出的 Fock 空间新基矢
+\[
+|s\rangle=(q_1^{\dagger})^{n_1}(q_2^{\dagger})^{n_2}\cdots(q_N^{\dagger})^{n_N}|0\rangle
+\]
+（当然 $M$ 粒子子空间也是这组基，只不过限定 $\sum_i n_i=M$）下，
+分量数能远远小于原始格点基下的 $C_N^M$。
+
+其理由是：如果提前知道真正的基态在其中的某些构型上分量为零，
+那么在寻找它的时候，就可以只在那些分量非零的构型所张成的小空间里做矩阵运算，
+这大大降低计算成本。
+
+需要强调：基变换不改变 Fock 空间本身，只改变“用哪一组单粒子轨道去搭出构型基”。
+同一个多体态 $|\Psi_0\rangle$，在不同单粒子基下的展开项数可以相差巨大。
+
+\item \textbf{判断指标：第 $g$ 位平均占据数。}
+如何判断 $|\Psi_0\rangle$ 在 $q$ 构型下的线性表示包含多少项？需要一个指标。
+
+基变换不会改变空间维度，所以 $M$ 粒子子空间 $\mathcal{H}_M$ 仍然包含
+$C_N^M$ 个 $q$ 构型作为基，但 $|\Psi_0\rangle$ 或许不会包含全部，
+即在其中一些构型上的分量为零。
+
+考察量：第 $g$ 位平均占据数 $\langle\Psi|q_g^{\dagger}q_g|\Psi\rangle$。
+对 $\mathcal{H}_M$ 中任意归一化矢量（在 $q$ 构型基下展开）
+$|\Psi\rangle=\sum_s a_s|s\rangle$，有
+\[
+\langle n_g\rangle
+=\sum_s n_{s_g}|a_s|^2
+=1\times\sum_{s:\,s_g=1}|a_s|^2
++0\times\sum_{s:\,s_g=0}|a_s|^2 ,
+\]
+其中 $n_{s_g}$ 是构型 $s$ 的第 $g$ 位（取 $0$ 或 $1$）。
+这里被乘上的 $0$ 和 $1$ 并不是可有可无的系数，
+它恰恰就是构型内部第 $g$ 位的信息。
+
+考察它的取值：
+\begin{itemize}[leftmargin=2em, itemsep=0.2em]
+\item 当 $\langle n_g\rangle$ 严格等于 $1$ 时，
+$\sum_{s:\,s_g=0}|a_s|^2=0$，
+即 $|\Psi\rangle$ 在所有第 $g$ 位为 $0$ 的构型上分量为零（等价于不包含这些构型）。
+\item 当 $\langle n_g\rangle$ 严格等于 $0$ 时，
+$\sum_{s:\,s_g=1}|a_s|^2=0$，
+即 $|\Psi\rangle$ 在所有第 $g$ 位为 $1$ 的构型上分量为零。
+\item 当 $\langle n_g\rangle$ 近似为 $1$ 时，
+$\sum_{s:\,s_g=0}|a_s|^2$ 很小，约等于零，
+可以人为地扔掉 $|\Psi\rangle$ 里所有第 $g$ 位为 $0$ 的组分（把它们的分量当作零）。
+这是一种降维操作，代价是近似——本来在这些构型上有值，我们当作没值。
+\item 当 $\langle n_g\rangle$ 近似为 $0$ 时同理，把所有第 $g$ 位为 $1$ 的构型组分近似为零。
+\item 当 $\langle n_g\rangle$ 是一个平庸的小数（中间值）时，
+第 $g$ 位为 $0$ 和为 $1$ 的两类构型同等重要，不能操作。
+\end{itemize}
+
+$g$ 的取值数等于构型的位数，等于单粒子子空间的维数，等于 $N$。
+
+所以我们对每个 $g$ 都计算 $\langle n_g\rangle$，
+每个 $g$ 都能得到一批要扔掉的构型名单——
+冻结第 $g$ 位为满时，扔掉的是第 $g$ 位为 $0$ 的构型；
+冻结第 $g$ 位为空时，扔掉的是第 $g$ 位为 $1$ 的构型。
+取它们的并集，扔掉这些构型，大大降低 $|\Psi\rangle$ 的有效维度。
+
+丢弃权重（即误差）由下列恒等式精确给出：
+\[
+\text{冻结为空所丢权重}=\langle n_g\rangle=\sum_{s:\,s_g=1}|a_s|^2 ,
+\qquad
+\text{冻结为满所丢权重}=1-\langle n_g\rangle=\sum_{s:\,s_g=0}|a_s|^2 .
+\]
+此外，冻结第 $g$ 位为满意味着该轨道恒占据一个粒子，
+剩余问题中的粒子数由 $M$ 降为 $M-1$；冻结为空则粒子数不变。
+
+\textbf{数值示例}：设 $N=4$ 格点、$M=2$ 个无自旋费米子，
+在某个 $q$ 基下取归一化态
+\[
+|\psi\rangle
+=a_1|1100\rangle+a_2|1010\rangle+a_3|1001\rangle
++a_4|0110\rangle+a_5|0101\rangle+a_6|0011\rangle ,
+\]
+其中 $|n_1 n_2 n_3 n_4\rangle$ 是 $q$ 构型（第 $g$ 位为 $n_g$）。
+取
+\[
+|a_1|^2=|a_2|^2=0.49,\qquad
+|a_3|^2=|a_4|^2=|a_5|^2=|a_6|^2=0.005 ,
+\]
+这满足归一化 $\sum_{i=1}^{6}|a_i|^2=1$。逐位计算平均占据数：
+\[
+\langle n_1\rangle=|a_1|^2+|a_2|^2+|a_3|^2=0.49+0.49+0.005=0.985 ,
+\]
+\[
+\langle n_2\rangle=|a_1|^2+|a_4|^2+|a_5|^2=0.49+0.005+0.005=0.50 ,
+\]
+\[
+\langle n_3\rangle=|a_2|^2+|a_4|^2+|a_6|^2=0.49+0.005+0.005=0.50 ,
+\]
+\[
+\langle n_4\rangle=|a_3|^2+|a_5|^2+|a_6|^2=0.005+0.005+0.005=0.015 .
+\]
+四个值分别是“约 $1$、平庸、平庸、约 $0$”，正好覆盖三种情况。
+（作为检验，$\langle n_1\rangle+\langle n_2\rangle+\langle n_3\rangle+\langle n_4\rangle=2$，
+与总粒子数 $M=2$ 一致。）
+
+据此决策：
+
+第 $1$ 位 $\langle n_1\rangle=0.985\approx 1$：冻结为满，
+扔掉第 $1$ 位为 $0$ 的构型
+$\{|0110\rangle,|0101\rangle,|0011\rangle\}$，丢弃权重 $=1-0.985=0.015$。
+
+第 $4$ 位 $\langle n_4\rangle=0.015\approx 0$：冻结为空，
+扔掉第 $4$ 位为 $1$ 的构型
+$\{|1001\rangle,|0101\rangle,|0011\rangle\}$，丢弃权重 $=0.015$。
+
+第 $2$、$3$ 位 $\langle n_2\rangle=\langle n_3\rangle=0.50$：平庸值，
+保留为活性轨道，不作冻结。
+
+两个丢弃名单有重叠（$|0101\rangle,|0011\rangle$ 同时出现在两个名单里）。
+取并集后，被丢弃的构型为
+$\{|1001\rangle,|0110\rangle,|0101\rangle,|0011\rangle\}$，
+总丢弃权重 $=0.02$。
+保留下来的构型只有 $|1100\rangle$ 与 $|1010\rangle$ 两个，
+于是 $|\psi\rangle$ 被近似为 2 维。
+同时，冻结第 $1$ 位为满使粒子数从 $2$ 降为 $1$，
+剩余活性轨道是第 $2$、$3$ 位，
+其有效子空间恰为 $C_2^1=2$ 维，自洽。
+
+\item \textbf{定量化：单粒子密度矩阵 $\rho$ 的引入。}
+现在问题被具体地定量化了：找一组单粒子基 $q$，
+使得由基态算出的 $\langle\Psi_0|q_g^{\dagger}q_g|\Psi_0\rangle$
+有尽可能多的 $0$、$1$ 以及趋近于 $0$、$1$ 的取值。
+
+这个形式不便于直接计算，而我们现成拥有的就是格点基。
+在单粒子子空间里，有基变换
+\[
+c_i=\sum_g U_{ig}\,q_g ,
+\qquad\text{即}\qquad
+q_g=\sum_i U_{ig}^{*}\,c_i ,
+\]
+其中 $U$ 是 $N\times N$ 的酉矩阵。
+
+代入得
+\[
+\langle q_g^{\dagger}q_g\rangle
+=\sum_{i,j}U_{ig}^{*}\,U_{jg}\,\langle c_j^{\dagger}c_i\rangle ,
+\]
+于是所谓的单粒子密度矩阵
+\[
+\rho_{ij}=\langle\Psi_0|\,c_j^{\dagger}c_i\,|\Psi_0\rangle
+\]
+自然出现了。
+
+目前 $\rho$ 看起来是一个纯数值矩阵，但注意到 $i,j$ 指标只在单粒子空间里跑动，
+所以我们可以人为定义一个作用在单粒子子空间 $\mathcal{H}_1$ 上的算符
+\[
+\rho=\sum_{i=1}^{N}\sum_{j=1}^{N}\rho_{ij}\,|i\rangle\langle j| ,
+\]
+其矩阵元正是
+\[
+\rho_{ij}=\langle\Psi_0|\,c_j^{\dagger}c_i\,|\Psi_0\rangle .
+\]
+
+（物理含义：对角元 $\rho_{ii}=\langle n_i\rangle$ 是格点 $i$ 的平均占据数，
+非对角元 $\rho_{ij}$ 是格点 $i,j$ 之间的单粒子关联。
+$\rho$ 是厄米矩阵，且 $\operatorname{tr}\rho=\sum_i\langle n_i\rangle=M$，即总粒子数。
+在本问题中 $\rho$ 是完整的单粒子密度矩阵。）
+
+把上述求和看成一个矩阵乘法，它恰好就是 $U^{\dagger}\rho U$ 的第 $g$ 个对角元：
+\[
+\langle q_g^{\dagger}q_g\rangle=(U^{\dagger}\rho U)_{gg} .
+\]
+于是问题变成了一个非常具体的矩阵问题：
+
+\begin{center}
+\textbf{给定厄米矩阵 $\rho$，找一个酉矩阵 $U$，使得 $U^{\dagger}\rho U$ 的对角元尽量接近 $0$ 或 $1$。}
+\end{center}
+
+\item \textbf{答案：$\rho$ 的本征矢组成的矩阵。}
+什么样的 $U$ 能做到？只要求出这个 $U$，就等于求出了 $q$。
+答案是：$U$ 取为 $\rho$ 的本征矢组成的矩阵。下面证明。
+
+任意基变换矩阵是酉矩阵。$\rho$ 的谱分解
+\[
+\rho=\sum_{k=1}^{N}\lambda_k\,|v_k\rangle\langle v_k|
+\]
+在任何表象下保持不变（本征值 $\lambda_k$ 不随基变换改变）。
+把 $U$ 看作把本征基 $\{|v_k\rangle\}$ 变换到新基 $\{|u_g\rangle\}$ 的酉矩阵，则
+\[
+(U^{\dagger}\rho U)_{gg}
+=\langle u_g|\rho|u_g\rangle
+=\sum_{k=1}^{N}\lambda_k\,|\langle v_k|u_g\rangle|^2 .
+\]
+现在看系数 $|\langle v_k|u_g\rangle|^2$。
+因为 $\{|v_k\rangle\}$ 是一组完备正交基，所以对固定的 $g$，这些系数满足
+\[
+|\langle v_k|u_g\rangle|^2\ge 0 ,
+\qquad
+\sum_{k=1}^{N}|\langle v_k|u_g\rangle|^2=1 .
+\]
+也就是说，任意轨道的占据数都是本征值 $\lambda_1,\dots,\lambda_N$ 的加权平均，
+权重非负且加起来等于 $1$。
+
+这是全文的核心：不管 $\rho$ 的谱有多极端（很多 $0$ 和 $1$），
+加权平均只会把它平均掉、抹平。
+
+\textbf{数值例子}：设 $\rho$ 有两个本征值 $\lambda_1=0.99$，$\lambda_2=0.01$
+（一条轨道几乎满，一条轨道几乎空）。
+
+在本征基下（$u_1=v_1,\ u_2=v_2$），权重集中在单个本征值上，占据数就是本征值本身：
+\[
+\langle u_1|\rho|u_1\rangle=1\cdot 0.99+0\cdot 0.01=0.99,
+\qquad
+\langle u_2|\rho|u_2\rangle=0\cdot 0.99+1\cdot 0.01=0.01 .
+\]
+极度接近 $0$ 和 $1$，正是我们想要的结果。
+
+在混合基下，例如
+\[
+u_1=\frac{v_1+v_2}{\sqrt2},\qquad u_2=\frac{v_1-v_2}{\sqrt2} ,
+\]
+则 $|\langle v_1|u_1\rangle|^2=|\langle v_2|u_1\rangle|^2=\tfrac12$，于是
+\[
+\langle u_1|\rho|u_1\rangle=\tfrac12\cdot 0.99+\tfrac12\cdot 0.01=0.5,
+\qquad
+\langle u_2|\rho|u_2\rangle=0.5 .
+\]
+两个占据数全变成了平庸的中间值，彻底抹平了 $0.99$ 与 $0.01$ 的极端性。
+
+从瑞利商的角度看同样清楚：在所有归一化单粒子轨道 $|u\rangle$ 中，
+$\langle u|\rho|u\rangle$ 的最大值是最大本征值 $\lambda_{\max}$，
+且在 $|u\rangle$ 取对应本征矢时达到；最小值是 $\lambda_{\min}$，对应最小本征矢。
+因此“逐条轨道取到最极端占据数”的唯一做法，就是取 $\rho$ 的完整本征基。
+除非 $|u\rangle$ 与 $|v\rangle$ 是同一组基，即 $U$ 恰好是对角化 $\rho$ 的矩阵。
+
+\item \textbf{$\rho_{ij}$ 的具体计算（基态为单个占据数构型时）。}
+要计算 $\rho$，需要知道基态的具体表示，而这又需要对角化哈密顿量。
+当基态在能量本征基（$f$ 基）下恰好是单个占据数构型（费米海构型）时
+（例如无相互作用系统），存在显式公式。
+
+设单粒子哈密顿量 $h$（格点基下的 $N\times N$ 矩阵，即 $H$ 的单粒子部分）对角化为
+\[
+h=W\varepsilon W^{\dagger},
+\qquad
+\varepsilon=\operatorname{diag}(\varepsilon_1,\dots,\varepsilon_N) .
+\]
+能量本征模式（分子轨道）为
+\[
+f_k=\sum_{i=1}^{N} w_{k,i}^{*}\,c_i ,
+\qquad k=1,\dots,N ,
+\]
+其中 $w_{k,i}$ 是第 $k$ 个本征模式在第 $i$ 个格点上的分量。
+
+基态填满能量最低的 $M$ 个模式：
+\[
+|\Psi_0\rangle=\prod_{k\in\mathrm{occ}} f_k^{\dagger}|0\rangle ,
+\]
+其中 $\mathrm{occ}$ 是被占据模式集合，$|\mathrm{occ}|=M$。
+这是 $f$ 基下的一个占据数构型。
+
+由 $f_k=\sum_i w_{k,i}^{*}c_i$ 反解得
+\[
+c_i=\sum_{k=1}^{N} w_{k,i}\,f_k .
+\]
+代入定义：
+\[
+\rho_{ij}
+=\langle\Psi_0|\,c_j^{\dagger}c_i\,|\Psi_0\rangle
+=\sum_{k,k'} w_{k',j}^{*}\,w_{k,i}\,
+\langle\Psi_0|\,f_{k'}^{\dagger}f_k\,|\Psi_0\rangle .
+\]
+因为 $|\Psi_0\rangle$ 是由 $f$ 模式搭成的单个构型，
+$f$ 模式之间是对角的：
+\[
+\langle\Psi_0|\,f_{k'}^{\dagger}f_k\,|\Psi_0\rangle
+=\delta_{k,k'}\,n_k ,
+\qquad
+n_k=
+\begin{cases}
+1, & k\in\mathrm{occ},\\
+0, & k\notin\mathrm{occ}.
+\end{cases}
+\]
+双重求和塌缩为单重求和，且 $n_k$ 把求和限制在 $\mathrm{occ}$ 上：
+\[
+\rho_{ij}=\sum_{k\in\mathrm{occ}} w_{k,i}\,w_{k,j}^{*} .
+\]
+注意 $\rho_{ij}$ 的计算基一直是格点基 $|i\rangle$（$i=1,\dots,N$）。
+
+这一公式的物理含义是：$\rho=\sum_{k\in\mathrm{occ}}|u_k\rangle\langle u_k|$，
+即投影到被占据分子轨道子空间上的投影算符。
+因此此时 $\rho$ 的本征值严格为 $0$ 和 $1$（$M$ 个 $1$，$N-M$ 个 $0$），
+自然轨道就是被占据／未占据的分子轨道，
+基态在自然轨道基下是单个构型，降维是精确且无误差的。
+对于相互作用系统，基态不是单个构型，
+$\rho$ 的本征值出现分数占据，此时降维是近似的（对应第 4 点的近似冻结）。
+
+\item \textbf{由 $\rho$ 的本征矢构造自然轨道。}
+对角化 $\rho$：
+\[
+\rho=U\Lambda U^{\dagger},
+\qquad
+\Lambda=\operatorname{diag}(n_1,\dots,n_N) ,
+\]
+其中 $U$ 的第 $g$ 列是第 $g$ 个本征矢（即自然轨道）在格点基下的分量，
+记其第 $i$ 个分量为 $U_{ig}$。
+
+于是自然轨道的产生算符为
+\[
+q_g^{\dagger}=\sum_{i=1}^{N} U_{ig}\,c_i^{\dagger},
+\qquad\text{即}\qquad
+q_g=\sum_{i=1}^{N} U_{ig}^{*}\,c_i .
+\]
+验证：本征矢 $|v_g\rangle$ 在格点基下展开为
+\[
+|v_g\rangle=\sum_i U_{ig}\,|i\rangle
+=\sum_i U_{ig}\,c_i^{\dagger}|0\rangle
+=q_g^{\dagger}|0\rangle ,
+\]
+故 $q_g^{\dagger}$ 正是对应自然轨道的产生算符。
+反解即得 $c_i=\sum_g U_{ig}\,q_g$，与第 5 点的基变换约定完全一致。
+
+在本征基（$q$ 基）下，$\rho$ 对角：
+\[
+\langle\Psi_0|\,q_g^{\dagger}q_g\,|\Psi_0\rangle=n_g .
+\]
+本征值 $n_g$ 即自然轨道占据数，满足 $\sum_g n_g=M$。
+占据数接近 $1$ 的轨道冻结为满，接近 $0$ 的冻结为空，中间的保留为活性轨道。
+
+\item \textbf{总结。}
+如此构造出的 $q_g$ 即\textbf{自然轨道}（natural orbitals）：
+单粒子密度矩阵 $\rho$ 的本征矢。
+
+自然轨道之所以重要，在于它是“让基态写起来最短”的单粒子基：
+对角化 $\rho$ 把占据数推到最极端（$0$、$1$ 或接近 $0$、$1$），
+冻结掉接近 $0$、$1$ 的轨道之后，活跃自由度从 $N$ 个格点（$C_N^M$ 维）
+降到少数几个活性轨道，实现从指数维到多项式维的降维。
+本质上，这是主成分分析（PCA）在量子多体问题中的对应：
+$\rho$ 的本征值 $n_g$ 扮演“方差”的角色，
+占据数接近中间值的少数轨道是变化最剧烈、必须保留的“主轴”，
+而占据数接近 $0$、$1$ 的轨道是几乎不变、可以压缩掉的方向。
+$\hat H_{\text{one}}^{(\alpha)} = \mu\,\hat c_0^\dagger \hat c_0 + \epsilon_b\,\hat b^\dagger \hat b + t_{0b}(\hat c_0^\dagger \hat b + \hat b^\dagger \hat c_0) + t_{0d}(\hat c_0^\dagger \hat d_1 + \hat d_1^\dagger \hat c_0) + t_{bd}(\hat b^\dagger \hat d_1 + \hat d_1^\dagger \hat b) + t_{0v}(\hat c_0^\dagger \hat v_1 + \hat v_1^\dagger \hat c_0) + t_{bv}(\hat b^\dagger \hat v_1 + \hat v_1^\dagger \hat b) + \sum_{j=1}^{N_d} e_{d_j}\,\hat d_j^\dagger \hat d_j + \sum_{j=1}^{N_v} e_{v_j}\,\hat v_j^\dagger \hat v_j + \sum_{j=1}^{N_d-1} t_{d_j}(\hat d_j^\dagger \hat d_{j+1} + \hat d_{j+1}^\dagger \hat d_j) + \sum_{j=1}^{N_v-1} t_{v_j}(\hat v_j^\dagger \hat v_{j+1} + \hat v_{j+1}^\dagger \hat v_j)$
+\end{enumerate}
+
+\end{document}
