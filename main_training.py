@@ -1,14 +1,19 @@
 """
 main_training.py —— 子空间扩展 + ViT 前向 + 截断 + SR 更新的主训练循环
 
-算法(论文 Eq. (3) 子空间扩展优化):
+算法(论文 Eq. (3) 子空间扩展优化 + 作者确认的执行顺序):
     每轮迭代:
-        1. 扩展:  Sc = { s' : <s|H|s'> != 0, s ∈ S }
-                  Se = S ∪ Sc(去重)
-        2. 前向:  对 Se 全部构型一次性计算 logψ(s)
-        3. SR:    求和域取"扩展前的 S"。S 的一跳邻域恰好等于 Se,
-                  故 E_loc 所需的 ψ(s') 全部在本次前向内,求和精确闭合
-        4. 截断:  按 |ψ|² 取 Se 中最大的 NS 个构型作为下一轮 S
+        1. 扩展:  Sc = { s' : <s|H|s'> != 0, s ∈ S_t }
+                  Se_t = S_t ∪ Sc(去重)
+        2. 前向:  对 Se_t 全部构型一次性计算 logψ(s)
+        3. 截断:  按 |ψ|² 取 Se_t 中最大的 NS 个构型 → S_{t+1}
+        4. 补邻:  S_{t+1} ⊂ Se_t,但其邻居可能落在 Se_t 之外。
+                  补算 N(S_{t+1}) 不属于 Se_t部分 的振幅,使
+                  E_loc 求和精确闭合: Σ_{s'} 覆盖 s 的全部邻居。
+                  S 稳定后该集合为空,零开销。
+        5. SR:    求和域是截断后的新集合 S_{t+1}(在同一个 ψ 上计算
+                  p / E_loc / f / S),解 (S+λI)δ=f 后更新 θ。
+
     截断依据:|ψ|² = exp(2·Re logψ),故只需按 logψ 的实部排序。
 """
 
@@ -23,10 +28,15 @@ import time
 
 from hyperpara import physics, net, train, L, Np, NL
 from config import ini_config, encode_NO          # 构型初始化与图片编码
-from ham_NO import get_conn                       # 邻居查询(扩展用)
+from ham_NO import get_conn as _get_conn_raw      # 邻居查询(扩展/补邻用) 
+from functools import lru_cache
 from vit_complex import ViTNQS                    # 复数版 ViT
 from sr_jvp import sr_update, SrOps               # 复数 SR 更新
 from func_timer import Timers
+
+@lru_cache(maxsize=20000)  # 后期邻居变动小，命中缓存以加速
+def get_conn(s):
+    return tuple(_get_conn_raw(s))
 
 No = physics.No
 Nb = physics.Nb
@@ -96,51 +106,83 @@ def run_training():
             _, st_now = nnx.split(model)
             vec_now, _ = jax.flatten_util.ravel_pytree(st_now)
             logpsi_pad = ops.forward(vec_now, jnp.asarray(bits_se_pad))
-            logpsi = logpsi_pad[:N_se]            # 裁掉 pad 行,(N_se,) 复数 logψ
+            logpsi_raw = logpsi_pad[:N_se]        # 裁掉 pad 行,(N_se,) 复数 logψ
 
         # shift 之前记录原始展宽:发散预警指标,健康态 ≤ ~30
-        raw_spread = float(jnp.max(jnp.real(logpsi)) - jnp.min(jnp.real(logpsi)))
-        # 按实部平移(相位不动):整体重标度 ψ -> e^{-c} ψ,不改变概率与 ψ(s')/ψ(s) 比值
-        logpsi = logpsi - jnp.max(jnp.real(logpsi))
+        raw_spread = float(jnp.max(jnp.real(logpsi_raw)) - jnp.min(jnp.real(logpsi_raw)))
+        # 按实部平移(相位不动):整体重标度 ψ -> e^{-c} ψ,不改变概率与 ψ(s')/ψ(s) 比值。
+        # 补算的邻居必须共用同一个平移常数 shift_c,否则 ψ(s')/ψ(s) 全部错位。
+        shift_c = jnp.max(jnp.real(logpsi_raw))
+        logpsi_se = logpsi_raw - shift_c
 
-        # ---- (4) SR 参数更新 ----
-        # 求和域是"扩展前的 S";S 的一跳邻域恰好等于 Se,故 E_loc 求和精确闭合。
-        idx_S = [Se_idx[s] for s in S]
-        x_S = x_jax[jnp.asarray(idx_S)]           # (NS, Np, NL)
+        # ---- (4) 截断:按 |ψ|² 取 Se 中前 NS 个 → 下一轮子空间 S_next ----
+        # 截断用当前 θ 的波函数(与论文一致);S_next 即本轮 SR 的求和域。
+        prob = np.asarray(jnp.exp(2.0 * jnp.real(logpsi_se)))   # 相对权重
+        prob_norm = prob / prob.sum()                           # 归一化概率
+        top_idx = np.argsort(-prob_norm)[:NS]
+        S_next = [Se_list[i] for i in top_idx]
 
-        model, E, info = sr_update(model, S, Se_idx, x_S, logpsi, it,
-                                   timers=timers, ops=ops)
+        # ---- (5) 补邻:S_next 的邻居中不属于 Se 的部分 ----
+        # S_next ⊂ Se,但它的邻居可能落在 Se 之外，N(N(S))邻居的邻居。
+        # 只有补齐这一小块,才能在 S_next 上精确计算 E_loc(s) = Σ_{s'} H_{ss'} ψ(s')/ψ(s)。
+        # 截断换血时补邻尤其明显 → S 稳定后 extra_set ⊆ Se 恒成立 → extra_list 为空 → 本步零开销(不触发前向)。
+        with timers.scope("extra"):
+            # S_next里有来自S和N(S)的，只有来自N(S)的需要补充邻居，来自S的元素的邻居已经包含在Se
+            new_cfgs = set(S_next) - set(S) # 在 S_next 里、但不在 S 里的元素
+            extra_set = set()
+            for s in new_cfgs:
+                extra_set.update(get_conn(s))
+            extra_list = sorted(extra_set - Se_set)
+            n_extra = len(extra_list)
 
-        print(f"          E = {E:.8f}  lr = {info['lr']:.2e}  λ = {info['diag_shift']:.2e}")
+            if n_extra:
+                bits_e = encode_NO(extra_list)
+                pad_e = (-n_extra) % 256
+                if pad_e:
+                    bits_e = np.pad(bits_e, ((0, pad_e), (0, 0), (0, 0)))
+                # 与 Se 共用同一个平移常数 shift_c
+                lp_e = np.asarray(
+                    ops.forward(vec_now, jnp.asarray(bits_e))[:n_extra]
+                ) - shift_c
+                logpsi_all = np.concatenate([np.asarray(logpsi_se), lp_e])
+            else:
+                logpsi_all = np.asarray(logpsi_se)
 
-        # ---- (5) 与 ED 对照:相对误差 + 能量轨迹 ----
-        # E 与 sr_update 内计算同源;参数更新要到下一轮前向才生效,监控滞后一步。
+            # 合并查找表:Se 原有下标 + 新增邻居接在其后
+            Se_idx2 = dict(Se_idx)
+            for k, v in enumerate(extra_list):
+                Se_idx2[v] = N_se + k
+
+        # ---- (6) SR 参数更新:求和域 = 截断后的新集合 S_next ----
+        # 与论文顺序一致:先扩展、后截断,再在新集合上计算
+        # p / E_loc / f / S 并更新 θ(仍使用本轮前向得到的同一个 ψ)。
+        x_Snext = x_jax[jnp.asarray(top_idx)]      # S_next 的图片 = Se_list[top_idx] 对应行
+
+        model, E, info = sr_update(model, S_next, Se_idx2, x_Snext, logpsi_all,
+                                   it, timers=timers, ops=ops)
+
+        # ---- (7) 与 ED 对照:相对误差 + 能量轨迹 ----
+        # E 已在 S_next 上求得;参数更新要到下一轮前向才生效。
         rel_err = abs(E - E_REF) / abs(E_REF)
-        print(f"          相对误差 rel_err = {rel_err:.3e}")
 
         # 变分能量应 ≥ E_REF(正常为正值);画图(log 坐标)时掩掉 ≤0 的异常点
         record_rel_err[it] = (E - E_REF) / abs(E_REF)
         record_E[it] = E
 
-        # ---- (6) 截断:按 |ψ|² 取前 NS 个,生成下一轮 S ----
-        prob = np.asarray(jnp.exp(2.0 * jnp.real(logpsi)))   # 相对权重
-        prob_norm = prob / prob.sum()                        # 归一化概率
-        top_idx = np.argsort(-prob_norm)[:NS]
-        S_next = [Se_list[i] for i in top_idx]
-
-        # ---- 本轮监控 ----
+        # ---- (8) 本轮监控 ----
+        # 只打印主循环独有的量;λ / lr / N_eff / max|E_loc| / ‖δ‖/‖θ‖ / resid
+        # 由 sr_jvp.py 的 [SR] 行输出,此处不再重复。
         overlap = len(set(S) & set(S_next))       # 旧构型保留数
         max_prob = float(prob_norm[top_idx[0]])
         print(
             f"iter {it:4d}: "
-            f"|Se|={len(Se_list):6d}  "
-            f"保留旧构型={overlap}/{NS}  "
-            f"最大概率={max_prob:.4e}  "
-            f"spread={raw_spread:.1f}  N_eff={info['neff']:.1f}  "
-            f"max|E_loc|={info['max_eloc']:.1f}  "
-            f"‖δ‖/‖θ‖={info['delta_ratio']:.2e}  "
-            f"resid={info['resid']:.1e}  "
-            f"E_NQS = {E:.8f}"
+            f"|Se|={N_se:6d}  "
+            f"补邻={n_extra:5d}  "
+            f"保留={overlap:3d}/{NS}  "
+            f"pmax={max_prob:.3e}  "
+            f"spread={raw_spread:5.1f}  "
+            f"E={E:.10f}  "
+            f"rel={rel_err:.3e}"
         )
 
         S = S_next
@@ -166,14 +208,7 @@ def run_training():
     # ---- 调试+诊断 ----
     from diag_post import run_post_diag, probe_fixed_S
     d = run_post_diag(model, S, ops, E_REF=E_REF)
-    # print(f"\n[探针] 固定S继续训练,目标 E_exact_S = {d['E_exact_S']:.10f}")
-    # model, E_fix = probe_fixed_S(model, S, ops, iters=200, lr_fix=1e-2, lam_fix=5e-5)
-    # print(f"[探针] 固定S训练后 E = {E_fix:.10f}(对照 {d['E_exact_S']:.10f})")
-    # run_post_diag(model, S, ops, E_REF=E_REF)   # 看新的拆分
-
-    # from diag_post import probe_dynamics, run_post_diag
-    # model, S, E = probe_dynamics(model, S, ops, iters=400, lr_fix=1e-2, lam_fix=5e-5)
-    # d2 = run_post_diag(model, S, ops, E_REF=E_REF)
+    
 
 
     return S, model
