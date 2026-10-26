@@ -6,31 +6,41 @@ vit_complex.py —— 复数版 ViT 神经量子态前向传播
       → + 复数位置编码Positional encoding，加上可学习的位置编码向量PE (Np, d)
       → Nl 层复数 Transformer 块(多头注意力 + FFN,每块的Pre-LayerNorm,跳连接skip connection)
       → log[cosh(·)] 复数非线性
-    输出: 对输出的Np*NL矩阵的每个元，施加 log[cosh(·)],再求和 → log ψ(s) → log ψ(s)   (M,) 复数
+    输出: 对最后一层 (M, Np, d) 复数表示的每个元素施加 log[cosh(·)],再对 patch 与特征两维求和
+          → log ψ(s)   (M,) 复数(未归一化,训练脚本里需手动归一化)
 
 关键设计决策:
     1. 【复数参数的存储】所有可训练参数是复数,但以"实部/虚部两个实数数组"nnx.Param 存储,前向时组装成复数(W = W_re + 1j*W_im)。
-       原因:JAX 对"实数 → 复数"的函数求梯度没有全纯(holomorphic)假设,
-       而网络里有 Re(·) 和实虚分开的 GELU(非全纯操作),
-       复数参数直接求导会得到错误的共轭 Wirtinger 梯度。
+       原因:整条前向并非全纯——复数 LayerNorm 的均值与 |·|² 方差、复数 softmax 的归一化、
+       log_cosh 的符号分支都不是全纯操作;JAX 对"实数 → 复数"的函数只按实数意义求导,
+       直接把复数参数交给优化器会得到共轭 Wirtinger 梯度,而不是实数偏导。
        实数存储后,梯度是普通实数偏导,S 矩阵、CG 全在实数域,干净可靠。
     
-    2. 【softmax】只接受实数:注意力分数取 q·k† 的实部再进 softmax。
-       实数权重 × 复数 value = 复数输出,信息(相位)不丢失。
+    2. 【softmax】注意力分数保持复数,不取实部,归一化直接在复数域内完成:
+           s_ij = (q_i · k_j)/√d_k                (复数)
+           α_ij = exp(s_ij) / Σ_j' exp(s_ij')     (复数权重)
+           A_i  = Σ_j α_ij v_j                    (复数)
+       权重的模决定"关注多少",相位决定"如何相干叠加",注意力因此能表达干涉效应。
+       数值稳定只平移实部: s ← s − max_j(Re s_ij),等价于给该行所有 exp 同乘一个正实常数
+       e^{-c},分子分母同步缩放,α 及其相位完全不变;不能减去复数,否则会改变相位。
 
     3. 【复数 LayerNorm】分母用"模平方平均"(正实数),除法不改变相位;
        复数 γ 恢复尺度与相位。输出仍是复数,不会被"压平"成实数。
 
-    4. 【GELU】实虚分开作用: GELU(z) = GELU(Re z) + i·GELU(Im z)(NetKet reim 约定)。
+    4. 【GELU】全纯 GELU: 直接作用于复数,沿复平面解析延拓
+           gelu(z) = z·Φ(z),  Φ(z) = (1 + erf(z/√2))/2,  ∂gelu/∂z̄ = 0
+       不再像 reim 版那样把实部、虚部分开各过一次 GELU(那是非全纯映射)。
+       JAX 的 lax.erf 不支持复数,故用 erf 的 Taylor 级数手写 _erf_complex(N=30);
+       该级数是交错级数,|z| 大时中间项先增大再衰减,抵消损失急剧上升,
+       因此要求前级 LayerNorm 把 |z| 压在 ~4 以内。
 
     5. 【logcosh】用 NetKet 的分支选择公式(全纯、单值、不溢出):
        按 Re(z) 符号把 z 翻到 Re≥0 扇区,再用 z + log1p(exp(-2z)) - log2。
 
-    6. 【输出头】官方 ViT 波函数输出头(NetKet 教程/Viteritti):
-       先对 patch 池化求和再 LayerNorm,两个独立支路(d→d 混合 + LayerNorm)
-       拼成复数向量,最后对 d 个特征逐元 log[cosh] 求和。
-       与旧 readout 头(4 个 patch 局部项)相比,每个 log_cosh 项看到
-       全部 patch 与全部特征,尾巴表达力更强。
+    6. 【输出头】最简读出:不做 patch 池化求和、不做输出 LayerNorm、不用双支路混合,
+       也没有任何额外可学习参数;直接把最后一层的 (Np, d) 复数表示逐元素过 log[cosh],
+       再对 patch 与特征两维求和,共 Np×d 个 log_cosh 项(而不是 Np×NL 个)。
+       每个 log_cosh 项只看到本 patch 的全部 d 个特征,patch 之间的信息已在注意力层混合。
 """
 
 import jax
@@ -40,9 +50,9 @@ from flax import nnx
 # 初始化尺度扫描旋钮(论文未写明的实现细节):
 #   只乘在权重抽签之后,不消耗随机流 → 同一组初始"基因"只改整体幅度,
 #   不同 INIT_SCALE 之间的对比是纯因果的,单次运行即可判定。
-#   V2 的实验已证明该轴敏感:1.26× 会使 256 崩坏。
+#   用calib.py标定
 # ====================================================================
-INIT_SCALE = 0.25     # 实验时改这里:{0.5, 0.75, 1.26, 1.5}
+INIT_SCALE = 0.55    
 
 # ====================================================================
 # 基础模块 1:复数线性层 ComplexDense
@@ -155,16 +165,32 @@ class ComplexMultiHeadAttention(nnx.Module):
         k = k.reshape(M, Np, self.h, self.dk).transpose(0, 2, 1, 3)
         v = v.reshape(M, Np, self.h, self.dk).transpose(0, 2, 1, 3)
 
-        #   3. 注意力分数(必须实数) 
-        # einsum: b=batch, h=head, n=query位, m=key位, f=特征
-        # q·k† 是复数内积,取 .real,再除以 √dk
-        scores = jnp.einsum('bhnf,bhmf->bhnm', q, k).real / jnp.sqrt(self.dk)
-        # scores: (M, h, Np, Np) 实数 —— 所有 token 两两全连接
+        # ------------------------------------------------------------
+        #   3. 复数 softmax: 分数保持复数,不取实部;归一化在复数域内完成:
+        #
+        #       s_ij   = (q_i · k_j) / √d_k              (复数)
+        #       α_ij   = exp(s_ij) / Σ_j' exp(s_ij')     (复数权重)
+        #       A_i    = Σ_j α_ij v_j                     (复数)
+        #
+        # 与实数 softmax 的区别:
+        #   实数版把分数投影成标量(取实部)后归一化,权重恒正、且总和为 1;
+        #   复数版的权重是复数,它的模和相位都携带信息——模决定"关注多少",
+        #   相位决定"如何相干叠加"。这让注意力可以表达干涉效应,
+        #   也是让整个网络更接近全纯函数的关键一环(与全纯 GELU 配套)。
+        #
+        # 数值稳定处理:
+        #   exp 对复数会在实部很大时溢出。这里只平移实部的最大值,
+        #   s → s − max_j(Re s_ij),等价于给第 i 行的所有 exp 同乘一个
+        #   正实常数 e^{-c};分子分母同时缩放,α 完全不变(相位也不变)。
+        #   注意:不能减去复数(那会改变相位,从而改变结果)。
+        # ------------------------------------------------------------
+        scores = jnp.einsum('bhnf,bhmf->bhnm', q, k) / jnp.sqrt(self.dk)  # (M,h,Np,Np) 复数
+        scores = scores - jnp.max(scores.real, axis=-1, keepdims=True)    # 仅平移实部
+        e = jnp.exp(scores)                                              # 复数指数
+        attn = e / jnp.sum(e, axis=-1, keepdims=True)                    # 复数归一化(逐行)
 
-        attn = jax.nn.softmax(scores, axis=-1)    # (M, h, Np, Np) 实数权重
-
-        #   4. 实数权重 × 复数 value = 复数输出  
-        out = jnp.einsum('bhnm,bhmf->bhnf', attn, v)     # (M, h, Np, dk) 复数
+        # 复数权重 × 复数 value → 复数输出
+        out = jnp.einsum('bhnm,bhmf->bhnf', attn, v)
 
         #   5. 拼接 h 个头,恢复 (M, Np, d),再过输出投影  
         out = out.transpose(0, 2, 1, 3).reshape(M, Np, d)
@@ -173,19 +199,46 @@ class ComplexMultiHeadAttention(nnx.Module):
 
 
 # ====================================================================
-# 基础模块 4:复数 GELU(实虚分开,NetKet reim 约定)
+# 基础模块 4:复数 GELU(全纯，直接作用在复数上)
+# 注意：JAX 的 lax.erf 不支持复数（只接受浮点类型）！需要自己手写_erf_complex
 # ====================================================================
-def reim_gelu(z):
-    """
-    GELU 实虚分开作用:
+def _erf_complex(z, N=30):
+    """复数 erf 的 Taylor 级数实现(JAX 的 lax.erf 不支持复数)。
 
-        GELU(z) = [GELU(√2 Re z) + i·GELU(√2 Im z)]/√2
+    erf(z) = (2/√π) Σ_{n≥0} (-1)^n z^(2n+1) / (n! (2n+1))
 
-    该函数非全纯,但由于参数是实数存储,梯度由实、虚两路正常回传,
-    不受 Wirtinger 梯度问题影响。
+    项间递推(避免重复算阶乘):
+        t_n / t_{n-1} = (-z²)/n · (2n-1)/(2n+1)
+
+    数值说明:
+      - erf 是整函数,级数全局收敛;
+      - 但它是交错级数,|z| 大时中间项会先增大再衰减(|z|=4 时峰值项 ~1e3,
+        抵消损失约 3 个数量级,float64 下无碍;|z|=6 时抵消 ~1e13,精度告急);
+      - 因此要求前级 LayerNorm 把 |z| 压在 ~4 以内(N=30 足够);
+      - calib.py 会打印 max|Im(logψ)| 与有限性,以此监控。
     """
-    s = jnp.sqrt(jnp.array(2.0, dtype=z.real.dtype))
-    return jax.nn.gelu(s * z.real) / s + 1j * jax.nn.gelu(s * z.imag) / s
+    z2 = z * z
+    term = z                      # n=0 项:z/(0!·1)
+    s = z
+    for n in range(1, N + 1):
+        term = term * (-z2) / n * (2 * n - 1) / (2 * n + 1)
+        s = s + term
+    return (2.0 / jnp.sqrt(jnp.pi)) * s
+
+
+def holomorphic_gelu(z):
+    """GELU 直接作用于复数输入(全纯激活)
+
+        gelu(z) = z · Φ(z),   Φ(z) = (1 + erf(z/√2)) / 2
+
+    与 `reim_gelu` 的本质区别:
+      - reim 版把复数拆成实部、虚部分别过 gelu,等价于 f(x)+i·f(y),
+        这是一个非全纯映射(不满足 Cauchy-Riemann);
+      - 本版沿复平面解析延拓,GELU 作为整函数的一部分保持全纯,
+        ∂gelu/∂z̄ = 0。
+    全纯性会实质简化量子几何张量的结构(共轭雅可比项消失)
+    """
+    return z * (1.0 + _erf_complex(z / jnp.sqrt(2.0))) / 2.0
 
 
 # ====================================================================
@@ -222,7 +275,7 @@ class ComplexTransformerBlock(nnx.Module):
             y = y + MHA(LN1(y))
             y = y + FFN(LN2(y))
 
-    FFN:两层复数全连接 d → 2d → d,中间 reim_gelu(论文:隐藏维度 2d,GeLU)。
+    FFN:两层复数全连接 d → 2d → d,中间 holomorphic_gelu(论文:隐藏维度 2d,GeLU)。
     """
     def __init__(self, d: int, h: int, *, rngs: nnx.Rngs):
         self.ln1 = ComplexLayerNorm(d)                 # 注意力前的 Pre-LN
@@ -236,47 +289,10 @@ class ComplexTransformerBlock(nnx.Module):
         # 子块 1:注意力 + 残差
         y = y + self.attn(self.ln1(y))                 # (M, Np, d)
         # 子块 2:FFN + 残差
-        y = y + self.ff2(reim_gelu(self.ff1(self.ln2(y))))   # (M, Np, d)
+        y = y + self.ff2(holomorphic_gelu(self.ff1(self.ln2(y))))   # (M, Np, d)
         return y
 
-# ====================================================================
-# 顶层输出头(版本 C:官方 ViT 波函数 OutputHead,NetKet 教程原文结构)
-# ====================================================================
-class OutputHeadC(nnx.Module):
-    """
-    官方 ViT 波函数输出头(Rende & Viteritti, NetKet ViT 教程):
 
-        z    = LN( Σ_i y_i )                      # 先对 Np 个 patch 池化成 d 维
-        out_r= LN( W_r z + b_r )                  # 实部支路(教程 output_layer0 + norm2)
-        out_i= LN( W_i z + b_i )                  # 虚部支路(教程 output_layer1 + norm3)
-        logψ = Σ_{α=1}^{d} log_cosh( out_r + i·out_i )_α    # d=32 项,不是 4 项
-
-    与旧版 readout 头(版本 A)的结构性差别:
-        - A: 每 patch 先投影成标量再求和 → 每个 log_cosh 项只看一个 patch;
-        - C: 先池化后混合 → 每个 log_cosh 项看到全部 patch 与全部特征
-          (Carleo-Troyer RBM 头,教程注释引 [CS17])。池化后的 LN 使
-          sum 与 mean 池化完全等价(逐行尺度不变),故教程写 sum。
-    """
-    def __init__(self, d: int, *, rngs: nnx.Rngs):
-        self.ln_pool = ComplexLayerNorm(d)               # 池化向量归一化(教程 out_layer_norm)
-        self.dense_r = ComplexDense(d, d, rngs=rngs)     # 实部支路(教程 output_layer0)
-        self.dense_i = ComplexDense(d, d, rngs=rngs)     # 虚部支路(教程 output_layer1)
-        self.ln_r = ComplexLayerNorm(d)                  # 教程 norm2
-        self.ln_i = ComplexLayerNorm(d)                  # 教程 norm3
-
-        # 教程 bias_init=zeros:字面对齐。数学上常数偏置会被后续 LN 的
-        # 均值归零完全吸收,零初始化只是免除浪费。
-        for _n in ("b_re", "b_im"):
-            for _dense in (self.dense_r, self.dense_i):
-                p = getattr(_dense, _n)
-                p.value = jnp.zeros_like(p.value)
-
-    def __call__(self, y):
-        # y: (M, Np, d) 复数,transformer 最终输出
-        z = self.ln_pool(y.sum(axis=1))                  # (M, d) 复数:先池化后归一化
-        out = self.ln_r(self.dense_r(z)) \
-            + 1j * self.ln_i(self.dense_i(z))            # (M, d) 复数:双支路拼装
-        return jnp.sum(log_cosh(out), axis=-1)           # (M,) 复数:32 项 log_cosh 求和
 
 
     
@@ -313,10 +329,8 @@ class ViTNQS(nnx.Module):
             [ComplexTransformerBlock(d, h, rngs=rngs) for _ in range(Nl)]
         )
 
-        #   4. 输出头RBM式
-        self.head = OutputHeadC(d, rngs=rngs)   # 版本 C:官方 RBM 式输出头
-        
 
+ 
     def __call__(self, x):
         # x: (M, Np, NL) 实数 0/1 图片
         #   1. 嵌入:实数 @ 复数权重 = 复数  
@@ -330,13 +344,8 @@ class ViTNQS(nnx.Module):
         for block in self.blocks:
             y = block(y)                      # (M, Np, d) 复数
 
-        #   4. 输出头(版本 C):池化 → 归一化 → 双支路混合 → 32 项 log_cosh 求和
-        logpsi = self.head(y)                            # (M,) 复数
-        # #   4. log[cosh] + 求平均 → log ψ(s)  
-        # logcosh = log_cosh(y)                 # (M, Np, d) 复数
-        # # 求平均(而非求和):除以 Np*d,logψ 量级 O(1),
-        # # 避免 exp(logψ) 溢出;整体缩放是波函数规范自由度,不改变物理。
-        # logpsi = jnp.mean(logcosh, axis=(1, 2))   # (M,) 复数
+        #   4. 输出头:对全部 patch × feature 逐元 log[cosh],再求和
+        logpsi = jnp.sum(log_cosh(y), axis=(1, 2))    # (M,) 复数,128 项
         return logpsi
         #ViT 输出的psi(s)往往未归一化！在训练脚本里要手动归一化
 
