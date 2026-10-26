@@ -29,6 +29,7 @@ import time
 from hyperpara import physics, net, train, L, Np, NL
 from config import ini_config, encode_NO          # 构型初始化与图片编码
 from ham_NO import get_conn as _get_conn_raw      # 邻居查询(扩展/补邻用) 
+#from ham_NO import H_act_on
 from functools import lru_cache
 from vit_complex import ViTNQS                    # 复数版 ViT
 from sr_jvp import sr_update, SrOps               # 复数 SR 更新
@@ -43,7 +44,21 @@ Nb = physics.Nb
 NS = train.NS
 E_REF = -25.761016092729
 #E_REF = -6.6758543768
-
+# DIAG_EVERY = 10
+# record_dEsub = np.full(train.max_iter, np.nan)
+# def sub_energy(S):
+#     """E_exact(S):把 H 限制在构型集 S 上做精确对角化,返回其基态能量。
+#     这是"当前子空间能达到的最好能量",与网络、优化器无关。"""
+#     idx = {s: i for i, s in enumerate(S)}
+#     n = len(S)
+#     H = np.zeros((n, n))
+#     for i, s in enumerate(S):
+#         for sp, c in H_act_on(s).items():
+#             j = idx.get(sp)
+#             if j is not None:          # 只取落在 S 内部的矩阵元
+#                 H[i, j] += c
+#     H = 0.5 * (H + H.T)                # 对称化,消掉数值不对称
+#     return float(np.linalg.eigvalsh(H)[0])
 
 def run_training():
     """子空间展开 + 截断的主循环(含 SR 参数更新)。"""
@@ -184,6 +199,16 @@ def run_training():
             f"E={E:.10f}  "
             f"rel={rel_err:.3e}"
         )
+
+        # # ---- 子空间诊断:ΔE_subspace(t) = E_exact(S_t) − E_REF ----
+        # # 平台高度由"锁定时刻的 S"决定,这条曲线直接测它:
+        # #   · 若 iter 0 与 iter 50 的值几乎相同 → S0 就是全部故事;
+        # #   · 若初期快速下降后冻结 → 冻结时刻决定平台,锁定机制实锤。
+        # if it % DIAG_EVERY == 0 or it == train.max_iter - 1:
+        #     dE_sub = sub_energy(S_next) - E_REF
+        #     record_dEsub[it] = dE_sub
+        #     print(f"          [子空间] ΔE_sub = {dE_sub:+.4e}   "
+        #           f"(rel 地板 = {dE_sub / abs(E_REF):.3e})")
 
         S = S_next
 
