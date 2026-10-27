@@ -21,7 +21,7 @@ import random
 import numpy as np
 
 from hyperpara import physics, train, L, Np, NL
-from ham_NO import index, get_conn
+from ham_NO import index, get_conn,H_act_on
 
 No = physics.No      # 轨道数
 Nb = physics.Nb      # 浴槽格点数(奇数,保证 NL 为整数)
@@ -91,61 +91,219 @@ def _reference_configs():
             refs.append(s)
     return refs
 
-
-def ini_config(NS=None, seed=42, restart_every=126):
-    """S0 = 参考核心 + 构型图随机游走(受控探索)。
-
-    动机(与论文 Fig.2(a) 的初始误差对照):
-      - 纯 BFS 壳填充太"规整/封闭":ψ 学会把概率集中到前几壳后,
-        截断永远选出同一批构型,子空间冻结(实测 保留=256/256,
-        |Se| 恒定),新构型无法进入,NS 增大不带来收益;
-      - 纯均匀随机半满太"散",早期 E_loc 涨落大(旧版发散教训);
-      - 折中:从 4 个参考构型出发做图上随机游走,每步从 get_conn
-        邻居里随机跳一步,每 restart_every 步从随机参考构型重新出发。
-        得到一张穿过构型空间的"蛛网":物理核心被锚定,同时保留
-        探索通道,给截断动力学留出换血空间。
-      - 论文初始 rel_err ≈ 1.05e-1,略高于我们纯 BFS 的 9.93e-2:
-        "更随机的 S0 → 初始能量略高"与此一致。
-
-    参数:
-        NS            : 子空间大小
-        seed          : 随机游走种子(可复现)
-        restart_every : 从参考构型重新出发的间隔步数(越小越散)
+def ini_config(NS=None):
+    """S0:参考构型 + 连通层 BFS 填充(取代原"均匀随机半满"采样)。
+    动机:子空间扩展法依赖"概率支撑集中在参考构型邻域"这一 NO 基物理
+    (论文 Fig.1(a))。从均匀随机半满构型出发,Nb=39 时早期 SR 步长因
+    E_loc 涨落过大而发散;从参考邻域出发,E_loc 涨落从一开始就是物理量级。
+    get_conn 返回的邻居不含 s 自身,BFS 的 seen 集合直接用它即可。
     """
     if NS is None:
         NS = train.NS
+    # 防御断言:NS 不能超过半满扇区总维度
     max_dim = math.comb(L, L // 2)
     assert NS <= max_dim, (
-        f"NS={NS} 超过半满扇区总维度 C({L},{L//2})={max_dim}!"
+        f"NS={NS} 超过半满扇区总维度 C({L},{L//2})={max_dim},BFS 无法完成!"
     )
     from ham_NO import get_conn
-    refs = _reference_configs()
-    rng = random.Random(seed)               # 局部随机实例,不扰动全局种子
-    S, seen = [], set()
-    for r in refs:                          # 参考核心:锚定物理,永不去除
-        S.append(r)
-        seen.add(r)
+    frontier = _reference_configs()
+    S, seen = [], set(frontier)
+    while frontier and len(S) < NS:
+        nxt = []
+        for s in frontier:
+            if len(S) >= NS:
+                break
+            S.append(s)
+            for sp in get_conn(s):
+                if sp not in seen:
+                    seen.add(sp)
+                    nxt.append(sp)
+        frontier = nxt
+    return S[:NS]
 
-    cur = rng.choice(refs)
-    steps_since_restart = 0
-    max_steps = 50 * NS                     # 安全阀:防止极端情况下空转
-    it = 0
-    while len(S) < NS and it < max_steps:
-        it += 1
-        if steps_since_restart >= restart_every:
-            cur = rng.choice(refs)
-            steps_since_restart = 0
-        nbrs = get_conn(cur)
-        if not nbrs:                        # 理论上有邻居;防御性兜底
-            cur = rng.choice(refs)
-            steps_since_restart = 0
-            continue
-        cur = rng.choice(nbrs)              # 随机跳一步
-        steps_since_restart += 1
-        if cur not in seen:
-            seen.add(cur)
-            S.append(cur)
-    return S
+# def ini_config(NS=None, seed=42, restart_every=126):
+#     """S0 = 参考核心 + 构型图随机游走(受控探索)。
+
+#     动机(与论文 Fig.2(a) 的初始误差对照):
+#       - 纯 BFS 壳填充太"规整/封闭":ψ 学会把概率集中到前几壳后,
+#         截断永远选出同一批构型,子空间冻结(实测 保留=256/256,
+#         |Se| 恒定),新构型无法进入,NS 增大不带来收益;
+#       - 纯均匀随机半满太"散",早期 E_loc 涨落大(旧版发散教训);
+#       - 折中:从 4 个参考构型出发做图上随机游走,每步从 get_conn
+#         邻居里随机跳一步,每 restart_every 步从随机参考构型重新出发。
+#         得到一张穿过构型空间的"蛛网":物理核心被锚定,同时保留
+#         探索通道,给截断动力学留出换血空间。
+#       - 论文初始 rel_err ≈ 1.05e-1,略高于我们纯 BFS 的 9.93e-2:
+#         "更随机的 S0 → 初始能量略高"与此一致。
+
+#     参数:
+#         NS            : 子空间大小
+#         seed          : 随机游走种子(可复现)
+#         restart_every : 从参考构型重新出发的间隔步数(越小越散)
+#     """
+#     if NS is None:
+#         NS = train.NS
+#     max_dim = math.comb(L, L // 2)
+#     assert NS <= max_dim, (
+#         f"NS={NS} 超过半满扇区总维度 C({L},{L//2})={max_dim}!"
+#     )
+#     from ham_NO import get_conn
+#     refs = _reference_configs()
+#     rng = random.Random(seed)               # 局部随机实例,不扰动全局种子
+#     S, seen = [], set()
+#     for r in refs:                          # 参考核心:锚定物理,永不去除
+#         S.append(r)
+#         seen.add(r)
+
+#     cur = rng.choice(refs)
+#     steps_since_restart = 0
+#     max_steps = 50 * NS                     # 安全阀:防止极端情况下空转
+#     it = 0
+#     while len(S) < NS and it < max_steps:
+#         it += 1
+#         if steps_since_restart >= restart_every:
+#             cur = rng.choice(refs)
+#             steps_since_restart = 0
+#         nbrs = get_conn(cur)
+#         if not nbrs:                        # 理论上有邻居;防御性兜底
+#             cur = rng.choice(refs)
+#             steps_since_restart = 0
+#             continue
+#         cur = rng.choice(nbrs)              # 随机跳一步
+#         steps_since_restart += 1
+#         if cur not in seen:
+#             seen.add(cur)
+#             S.append(cur)
+#     return S
+
+# def ini_config(NS=None, max_dist=2):
+#     """S0 = 按微扰振幅排序取前 NS 个构型（替代 BFS / 随机游走）。
+
+#     ── 为什么换 ─────────────────────────────────────────────
+#     子空间扩展协议满足 S_{t+1} ⊂ N(S_t)（Eq.3），即 S 每步只能移动一跳。
+#     实测换血率 r = |S_{t+1}\\S_t| ≈ 1 个构型/轮（日志中"保留 255~256/256"），
+#     因此完全替换 S 需要 ≈ NS 步：
+#         NS=256  → ~256 步（1000 步够用，观测到 ~400 轮进入平台）
+#         NS=512  → ~512 步（紧张）
+#         NS=1024 → ~1024 步（>1000，实测到 1000 轮仍在下降、从未进平台）
+#     同时 |Se|/NS 从 7.4 坍缩到 2.57，S 收缩成团簇，探索带只剩几百个构型，
+#     每步只用掉 1 个 → 死锁。这说明本协议没有"发现"能力，只有"确认"能力。
+
+#     既然三条曲线都在 ~400 轮进平台且差一个数量级，"发现"不可能发生在训练中，
+#     只能是 S0 本身就已经是真基态 top-NS 的好估计。故本函数的目标不是
+#     "参考构型附近的连通壳"，而是"按 |ψ_GS(s)|² 从大到小取前 NS 个"。
+
+#     ── 如何估计 |ψ_GS(s)| ───────────────────────────────────
+#     以 4 个参考构型为 0 阶态做 Rayleigh-Schrödinger 微扰展开。对从参考 r
+#     经 k 跳到达的构型 s：
+#         c_s ≈ Σ_paths  Π_{j=1..k}  H_{j-1,j} / (E_r − E_j)
+#     其中 E_j = <j|H|j> 是对角能量，取自 H_act_on(s)[s]。
+#     展开到 2 跳（max_dist=2），覆盖：
+#         k=0  参考构型本身
+#         k=1  杂质/价带电子搬到活性位 b 的单激发
+#         k=2  价带空穴 + 导带电子的单粒子-空穴对（论文 Fig.1 的泄露构型）
+#     该估计天然包含"越远离杂质泄露越少"：每跳贡献一个 hopping 矩阵元与一个
+#     能量分母，沿链传播时振幅按 (t/Δ)^k 指数衰减，无需人为衰减指数。
+
+#     ── 已知局限 ─────────────────────────────────────────────
+#     · 近简并时能量分母趋零，微扰失效（本函数用 den_floor 跳过这类路径）；
+#     · 强关联（大 U）时单参考微扰可能低估多对激发，可能需要在 max_dist=4
+#       或显式考虑杂质双占/双空的联合激发；
+#     · 这些都是"排序准不准"的问题，而非"能不能算"的问题——请用一次
+#       子空间 ED（ΔE_sub(S0)）来验证，而不是凭先验相信它。
+
+#     参数:
+#         NS        : 子空间大小
+#         max_dist  : 微扰展开的最大跳跃数（2 足以给 NS≤1024 提供候选）
+#     返回:
+#         长度 NS 的大整数构型列表，按 |c_s| 从大到小排序（参考构型恒在首位）
+#     """
+#     if NS is None:
+#         NS = train.NS
+
+#     from ham_NO import H_act_on, get_conn
+
+#     refs = _reference_configs()
+#     den_floor = 1e-6          # 能量分母下限：|E_r − E_s| 小于此值视为简并，跳过该路径
+
+#     # ---- 1. 缓存 H_act_on：每个构型只查一次 ----
+#     # 微扰展开会反复用到同一批构型的对角能量和跳跃矩阵元，
+#     # 而 H_act_on 是 CPU 串行构造字典（约 1 ms/次），重复调用很贵。
+#     cache = {}
+
+#     def conn_of(s):
+#         d = cache.get(s)
+#         if d is None:
+#             d = H_act_on(s)
+#             cache[s] = d
+#         return d
+
+#     # ---- 2. 以每个参考构型为 0 阶态，展开到 max_dist 跳 ----
+#     # ampl[s] 保存各路径、各参考构型给出的最大 |c_s|，仅作为排序分数使用。
+#     ampl = {}
+
+#     for r in refs:
+#         d_r = conn_of(r)
+#         E_r = d_r[r]                     # 参考构型的对角能量
+#         ampl[r] = 1.0                    # 0 阶：参考构型本身，振幅最大
+
+#         # ---- 第 1 跳：一阶微扰 c1 = H_{r,s1} / (E_r − E_s1) ----
+#         for s1, h1 in d_r.items():
+#             if s1 == r:
+#                 continue
+#             d1 = conn_of(s1)
+#             E1 = d1[s1]
+#             den1 = E_r - E1
+#             if abs(den1) < den_floor:
+#                 continue                 # 近简并，微扰不适用
+#             c1 = abs(h1 / den1)
+#             if ampl.get(s1, -1.0) < c1:
+#                 ampl[s1] = c1
+
+#             if max_dist < 2:
+#                 continue
+
+#             # ---- 第 2 跳：二阶微扰 c2 = H_{r,s1}·H_{s1,s2} / [(E_r−E_s1)(E_r−E_s2)] ----
+#             # 典型产物：价带挖一个空穴 + 导带补一个电子（经活性位 b 中转）
+#             for s2, h2 in d1.items():
+#                 if s2 == r or s2 == s1:
+#                     continue
+#                 E2 = conn_of(s2)[s2]
+#                 den2 = E_r - E2
+#                 if abs(den2) < den_floor:
+#                     continue
+#                 c2 = abs(h1 * h2 / (den1 * den2))
+#                 if ampl.get(s2, -1.0) < c2:
+#                     ampl[s2] = c2
+
+#     # ---- 3. 按振幅降序取前 NS 个 ----
+#     # 参考构型振幅为 1，恒排在最前，不会被截掉。
+#     ranked = sorted(ampl.items(), key=lambda kv: -kv[1])
+#     S = [s for s, _ in ranked[:NS]]
+
+#     # ---- 4. 兜底：候选不足时按图距离 BFS 补齐 ----
+#     # 仅在 NS 超过 max_dist=2 能覆盖的构型数时触发（NS=256/512 通常不会）。
+#     if len(S) < NS:
+#         seen = set(ampl)
+#         frontier = list(S)
+#         while frontier and len(S) < NS:
+#             nxt = []
+#             for s in frontier:
+#                 for sp in get_conn(s):
+#                     if sp not in seen:
+#                         seen.add(sp)
+#                         nxt.append(sp)
+#                         S.append(sp)
+#                         if len(S) >= NS:
+#                             break
+#                 if len(S) >= NS:
+#                     break
+#             frontier = nxt
+
+#     # ---- 5. 统计打印：确认候选数与振幅衰减形状 ----
+#     print(f"[S0] 微扰候选 {len(ampl)} 个，取前 {NS} 个；"
+#           f"振幅范围 [{ranked[min(NS, len(ranked))-1][1]:.3e}, {ranked[0][1]:.3e}]")
+#     return S
 
 
 
@@ -312,5 +470,23 @@ if __name__ == "__main__":
     print(f"         其余列(v 链空穴表示、d 链空表示)全为 0 → 图片稀疏均匀 ✓")
     print("\n平均场构型的 NO 图片(每两行一个 α:上=电子行[0,d],下=空穴行[b,v]):")
     print(img.astype(int))
+
+    def sub_energy(S):
+        """E_exact(S):把 H 限制在构型集 S 上做精确对角化,返回其基态能量。
+        这是"当前子空间能达到的最好能量",与网络、优化器无关。"""
+        idx = {s: i for i, s in enumerate(S)}
+        n = len(S)
+        H = np.zeros((n, n))
+        for i, s in enumerate(S):
+            for sp, c in H_act_on(s).items():
+                j = idx.get(sp)
+                if j is not None:          # 只取落在 S 内部的矩阵元
+                    H[i, j] += c
+        H = 0.5 * (H + H.T)                # 对称化,消掉数值不对称
+        return float(np.linalg.eigvalsh(H)[0])
+    for ns in (256, 512, 1024):
+        S0 = ini_config(ns)
+        dE = sub_energy(S0) - (-25.761016092729)
+        print(f"NS={ns}: ΔE_sub(S0) = {dE:.4e}  rel_sub={dE/25.761016092729:.4e}  预期rel {[5e-6, 1.5e-6, 5e-7]}")
 
     print("\n✓ config.py 全部自检通过")
