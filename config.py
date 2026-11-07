@@ -2,8 +2,9 @@
 config.py —— 构型生成 与 构型 → 图片编码(链几何 / NO 几何)
 
 本文件包含:
-    1. ini_config() : 生成 NS 个互不相同的半满物理构型(大整数)。
-                      对几何无感知:它只操作"物理位串",链几何 / NO 基通用。
+    1. ini_config()     : 生成 S0 = 4 个 NO 参考构型 + 连通层 BFS 填充(大整数)。
+                          依赖 NO 基的 site_no 约定和 ham_NO.get_conn,只适用于 NO 几何。
+       ini_config_rand(): 旧版均匀随机半满采样,只操作物理位串,两种几何通用。
     2. encode_chain(): 链几何编码 —— 纯切块(α-major 布局下不需要 transpose)。
                       保留用于 VMC 基线对照与调试。
     3. encode_NO()   : NO 几何编码 —— 列重排 + 空穴翻转(论文 Fig.1(a) 的图片)。
@@ -97,6 +98,8 @@ def ini_config(NS=None):
     (论文 Fig.1(a))。从均匀随机半满构型出发,Nb=39 时早期 SR 步长因
     E_loc 涨落过大而发散;从参考邻域出发,E_loc 涨落从一开始就是物理量级。
     get_conn 返回的邻居不含 s 自身,BFS 的 seen 集合直接用它即可。
+    BFS 只能走到参考构型所在的 H 连通分量;若 NS 超过该分量维度,返回的构型数会少于 NS
+    (下面的断言只检查更大的半满扇区总维度)。
     """
     if NS is None:
         NS = train.NS
@@ -363,7 +366,7 @@ def encode_chain(Se_list):
 # ====================================================================
 def encode_NO(Se_list):
     """
-    NO 几何编码:每个 α 块切成两行,valance 行做空穴翻转(论文 Fig.1(a))。
+    NO 几何编码:每个 α 块切成两行,valence 行做空穴翻转(论文 Fig.1(a))。
 
     块内 site_no 排序(NO 基):
         site_no = 0           → 杂质 |0⟩
