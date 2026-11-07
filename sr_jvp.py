@@ -2,13 +2,14 @@
 sr_jvp.py —— 复数随机重构(SR)参数更新(NetKet QGTJacobianDense 路径)
 
 算法(复数波函数 SR,实数参数):
-    对"扩展前的子空间 S"计算:
+    对截断后的子空间 S_next(= S_{t+1},由主循环传入)计算:
         E_loc(s) = Σ_{s'} <s|H|s'> · ψ(s')/ψ(s)          (复数)
         p(s)     = |ψ(s)|² / Σ_{s∈S}|ψ(s)|²              (实数概率)
         O_k(s)   = ∂ logψ(s) / ∂θ_k                      (复数,θ 为实数参数)
     组装量子几何张量与力向量:
         S_kk' = Re[ ⟨O_k* O_k'⟩ − ⟨O_k*⟩⟨O_k'⟩ ]         (实数对称半正定)
-        f_k   = Re[ ⟨O_k* (E_loc − E)⟩ ]                 (实数)
+        E     = Re Σ_{s∈S} p(s) E_loc(s)
+        f_k   = 2·Re[ ⟨(O_k − ⟨O_k⟩)* (E_loc − E)⟩ ]      (实数)
     解 (S + λI) x = f,更新:
         θ ← θ − η · x
 
@@ -96,7 +97,7 @@ class SrOps:
             def matvec(v):
                 return O.T @ (O @ v) + lam * v
             delta, info = jax.scipy.sparse.linalg.cg(matvec, f, x0=x0)
-            # info: 0 = 达到 tol·‖f‖ 收敛; >0 = 跑满 maxiter 仍未收敛(病态信号)
+            # 当前 JAX(0.11.0)的 cg 返回的 info 恒为 None(占位),不报告收敛状态;判断 CG 质量要看 resid
             return delta, info
         self.cg_solve = jax.jit(_cg_solve)
 
@@ -108,7 +109,7 @@ def compute_eloc(S, Se_idx, logpsi_se):
     """
     E_loc(s) = Σ_{s'} <s|H|s'> · exp[logψ(s') − logψ(s)]
 
-    - S 的邻居 s' 必在 Se 内,求和精确闭合;
+    - S 的邻居 s' 必在 Se_idx 内(主循环传入 Se ∪ 补邻),求和精确闭合;
     - 当前矩阵元为实数,<s|H|s'> = <s'|H|s>;若系数变复,需对 coeff 取共轭;
     - float64 下 exp 上溢线 ±709,不做任何裁剪(NetKet 原样,病态由上层打印)。
     """
@@ -134,11 +135,14 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None,lr_ove
 
     参数:
         model    : nnx 模型(复数 ViT)
-        S        : 扩展前的 NS 个构型(SR 求和域)
-        Se_idx   : 构型大整数 -> 扩展空间下标的反查表
+        S        : 截断后的 NS 个构型 S_next(SR 求和域)
+        Se_idx   : 构型大整数 -> logpsi_se 下标的反查表(主循环传 Se_idx2,覆盖 Se ∪ 补邻)
         x_S      : (NS, Np, NL) S 中构型的 0/1 图片
-        logpsi_se: (N_se,) 完整扩展空间的 logψ(与 Se_idx 对齐,已 shift)
+        logpsi_se: (N_se + n_extra,) Se ∪ 补邻 的 logψ(主循环传 logpsi_all,共用同一 shift_c)
         it       : 迭代轮数(用于 λ、η 线性调度)
+        timers   : Timers 实例,实际必传(函数体直接调用 timers.scope,默认 None 会报错)
+        ops      : SrOps;None 时现场新建(CG 热启动清零,且需重新编译)
+        lr_override, lam_override : 探针模式下固定 lr / λ,None 表示用调度值
     """
     if ops is None:
         ops = SrOps(model)
@@ -152,7 +156,7 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None,lr_ove
     with timers.scope("eloc"):
         E_loc = compute_eloc(S, Se_idx, logpsi_se)
 
-    # ---- 2. 概率权重与变分能量 ----
+    # ---- 2. 概率权重与能量估计量 E(即 E_θ:E_loc 含 S 外振幅,不是严格 Rayleigh 商,可低于 E_exact(S))----
     with timers.scope("assemble"):
         logpsi_S = np.asarray(logpsi_se, dtype=np.complex128)[
             [Se_idx[s] for s in S]
@@ -164,7 +168,7 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None,lr_ove
 
         # —— 诊断指标(不改变任何数学) ——
         w_se = np.exp(2.0 * np.real(np.asarray(logpsi_se)))
-        mass_S = float(psi2.sum() / w_se.sum())          # S 占 Se 的概率质量
+        mass_S = float(psi2.sum() / w_se.sum())          # S 占 Se ∪ 补邻 的概率质量
         var_eloc = float(np.sum(p * np.abs(E_loc - E) ** 2))  # 能量方差:精确 GS 处 → 0
         neff = 1.0 / float(np.sum(p**2))          # 有效状态数(分布偏斜度)
         max_eloc = float(np.max(np.abs(E_loc)))
@@ -186,8 +190,9 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None,lr_ove
         # 与 y 错配导致 f 被洗牌——上一版的 bug 根源。
         O_flat = O_s.transpose(1, 0, 2).reshape(2 * NS_l, P)
 
-        # 力向量:O_flatᵀ · [√p⊙Re(E_loc−E); √p⊙Im(E_loc)]
-        # 与论文 f_k = Σ p Re[O_k*(E_loc−E)] 等价(中心化交叉项因 Σp(E_loc−E)=0 抵消)
+        # 力向量:f = 2·O_flatᵀ · [√p⊙Re(E_loc−E); √p⊙Im(E_loc)],即 f_k = 2 Σ p Re[(O_k−⟨O_k⟩)*(E_loc−E)]
+        # 系数 2:论文 Eq.S5 未写,来自 NetKet 的 log_pdf = 2·Re logψ(日志第 14 项)。
+        # 与未中心化形式相差 2·Im⟨O_k⟩·Im⟨E_loc⟩:E 只取实部,S 上 ⟨E_loc⟩ 含 leak 时虚部不必为 0,交叉项不严格抵消。
         z = E_loc - E
         y = np.concatenate([np.sqrt(p) * np.real(z), np.sqrt(p) * np.imag(z)])
         f = 2.0*(O_flat.T @ y)                          # (P,)
@@ -256,6 +261,6 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None,lr_ove
         "mass_S": mass_S,          # 诊断:子空间覆盖度
         "var_eloc": var_eloc,      # 诊断:波函数质量(精确 GS 处 → 0)
         "f_norm": f_norm,          # 诊断:优化是否还在推进
-        "cg_info": cg_info,        # 诊断:CG 是否收敛(0=收敛)
+        "cg_info": cg_info,        # 当前恒为 -1(cg 的 info 为 None),不反映收敛,见 resid
     }
     return model_new, E, info
