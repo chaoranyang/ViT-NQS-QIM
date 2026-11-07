@@ -11,8 +11,8 @@ vit_complex.py —— 复数版 ViT 神经量子态前向传播
 
 关键设计决策:
     1. 【复数参数的存储】所有可训练参数是复数,但以"实部/虚部两个实数数组"nnx.Param 存储,前向时组装成复数(W = W_re + 1j*W_im)。
-       原因:整条前向并非全纯——复数 LayerNorm 的均值与 |·|² 方差、复数 softmax 的归一化、
-       log_cosh 的符号分支都不是全纯操作;JAX 对"实数 → 复数"的函数只按实数意义求导,
+       原因:整条前向并非全纯——破坏全纯性的是复数 LayerNorm 的 |·|² 方差;去均值、
+       复数 softmax(含 max Re 平移)、log_cosh 的符号分支都不破坏全纯性;JAX 对"实数 → 复数"的函数只按实数意义求导,
        直接把复数参数交给优化器会得到共轭 Wirtinger 梯度,而不是实数偏导。
        实数存储后,梯度是普通实数偏导,S 矩阵、CG 全在实数域,干净可靠。
     
@@ -31,16 +31,17 @@ vit_complex.py —— 复数版 ViT 神经量子态前向传播
            gelu(z) = z·Φ(z),  Φ(z) = (1 + erf(z/√2))/2,  ∂gelu/∂z̄ = 0
        不再像 reim 版那样把实部、虚部分开各过一次 GELU(那是非全纯映射)。
        JAX 的 lax.erf 不支持复数,故用 erf 的 Taylor 级数手写 _erf_complex(N=30);
-       该级数是交错级数,|z| 大时中间项先增大再衰减,抵消损失急剧上升,
-       因此要求前级 LayerNorm 把 |z| 压在 ~4 以内。
+       该级数是交错级数,|z| 大时中间项先增大再衰减,抵消损失和 N=30 的截断误差都急剧上升,
+       因此要求 GELU 输入 |z| ≲ 4(erf 自变量为 z/√2)。LayerNorm 与 GELU 之间隔着 ff1,
+       只能间接限制幅度,实际幅度由 calib.py 的 max|z|@GELU 监控。
 
     5. 【logcosh】用 NetKet 的分支选择公式(全纯、单值、不溢出):
        按 Re(z) 符号把 z 翻到 Re≥0 扇区,再用 z + log1p(exp(-2z)) - log2。
 
-    6. 【输出头】最简读出:不做 patch 池化求和、不做输出 LayerNorm、不用双支路混合,
+    6. 【输出头】最简读出:log_cosh 之前不做 patch 池化、不做输出 LayerNorm、不用双支路混合,
        也没有任何额外可学习参数;直接把最后一层的 (Np, d) 复数表示逐元素过 log[cosh],
-       再对 patch 与特征两维求和,共 Np×d 个 log_cosh 项(而不是 Np×NL 个)。
-       每个 log_cosh 项只看到本 patch 的全部 d 个特征,patch 之间的信息已在注意力层混合。
+       再对 patch 与特征feature两维求和,共 Np×d 个 log_cosh 项(而不是 Np×NL 个)。
+       每个 log_cosh 项只作用于一个标量 y[p,f];patch 之间、特征之间的混合全部在 Transformer 块内完成。
 """
 
 import jax
@@ -48,8 +49,9 @@ import jax.numpy as jnp
 from flax import nnx
 # ====================================================================
 # 初始化尺度扫描旋钮(论文未写明的实现细节):
-#   只乘在权重抽签之后,不消耗随机流 → 同一组初始"基因"只改整体幅度,
-#   不同 INIT_SCALE 之间的对比是纯因果的,单次运行即可判定。
+#   乘在 ComplexDense 的 W、b 抽签之后,不消耗随机流 → 不同 INIT_SCALE 共用同一组抽签,
+#   只改这些层的幅度(pos_embed 的 0.02 尺度和 LayerNorm 的 γ/β 不受影响)。
+#   训练本身有混沌噪声(日志第 20 项),比较时仍按 30% 噪声纪律判断。
 #   用calib.py标定
 # ====================================================================
 INIT_SCALE = 0.55    
@@ -65,11 +67,11 @@ class ComplexDense(nnx.Module):
         W_re, W_im : (din, dout) 权重实部/虚部
         b_re, b_im : (dout,)     偏置实部/虚部
 
-    初始化:Glorot 方差 σ² = 2/(din+dout),实虚各分一半(σ²/2),
-    使 E|W|² = σ²,和实数版方差习惯一致。
+    初始化:Glorot 方差 σ² = 2/(din+dout)。W、b 都从同一高斯抽取,实虚各分一半方差,
+    再整体乘 INIT_SCALE,即 E|W|² = E|b|² = INIT_SCALE²·σ²。
     """
     def __init__(self, din, dout, *, rngs: nnx.Rngs):
-        # Glorot 标准差;每个分量实际标准差 = σ/√2(实虚平分方差)
+        # Glorot 标准差;每个分量实际标准差 = σ/√2 · INIT_SCALE(实虚平分方差)
         sigma = jnp.sqrt(2.0 / (din + dout))
 
         k = rngs.params()
@@ -84,7 +86,7 @@ class ComplexDense(nnx.Module):
 
     def __call__(self, x):
         # 输入 x:(..., din),实数(首层图片)或复数(后续层)
-        # 组装复数权重:实数数组 + i*实数数组 → complex64
+        # 组装复数权重:实数数组 + i*实数数组 → 复数(训练时 x64 开启为 complex128;本文件单独运行自检时未开 x64,为 complex64)
         W = self.W_re + 1j * self.W_im        # (din, dout) 复数
         b = self.b_re + 1j * self.b_im        # (dout,) 复数
         # 矩阵乘:JAX 中 实数 @ 复数 自动= 复数,故不用预先把图片也转成复数。复数 @ 复数 = 复数
@@ -100,11 +102,11 @@ class ComplexLayerNorm(nnx.Module):
 
         μ   = mean(y)                     复数均值
         σ²  = mean(|y - μ|²)              实方差(模平方平均)
-        ŷ   = (y - μ)/√(σ² + ε) · γ       除以正实数 → 相位不变
+        ŷ   = (y - μ)/√(σ² + ε) · γ + β   除以正实数 → 相位不变
 
-    关键:分母是正实数,不改变任何分量的辐角;相位由复数 γ 恢复。
+    关键:分母是正实数,不改变 y−μ 各分量的辐角;相位由复数 γ 恢复。
     所以输出仍是复数,不会被压平。
-    初始化 γ = 1(实),β = 0,即初始为恒等变换。
+    初始化 γ = 1(实),β = 0,即仿射部分初始为恒等(归一化本身仍起作用,整层不是恒等变换)。
     """
     def __init__(self, d: int):    # ★:x64 下默认 float64
         self.gamma_re = nnx.Param(jnp.ones(d))     # γ 实部
@@ -132,12 +134,13 @@ class ComplexMultiHeadAttention(nnx.Module):
     """
     复数多头自注意力(论文图 1(c) 上半部分):
 
-        Q = y @ WQ,  K = y @ WK,  V = y @ WV    复数投影
-        scores = Re(Q · K†)/√dk                  取实部,才能进 softmax
-        A_i = softmax(scores) · V                实数权重混合复数 value
+        Q = y @ WQ,  K = y @ WK,  V = y @ WV    复数投影(含偏置)
+        s_ij = (q_i · k_j)/√dk                  复数分数:不取实部,k 不取共轭
+        α_ij = exp(s_ij) / Σ_j' exp(s_ij')      复数 softmax,权重为复数
+        A_i  = Σ_j α_ij v_j                     复数权重混合复数 value
         拼接 h 个头 → 输出投影 WO
 
-    论文写 q·k^T,复数下自然推广为 q·k†(厄米共轭),这里用 k.conj()。
+    按论文 Fig.1(c) 字面的 q·kᵀ 实现(双线性,无厄米共轭)。
     """
     def __init__(self, d: int, h: int, *, rngs: nnx.Rngs):
         assert d % h == 0, "隐藏维度 d 必须能被头数 h 整除"
@@ -192,7 +195,7 @@ class ComplexMultiHeadAttention(nnx.Module):
         # 复数权重 × 复数 value → 复数输出
         out = jnp.einsum('bhnm,bhmf->bhnf', attn, v)
 
-        #   5. 拼接 h 个头,恢复 (M, Np, d),再过输出投影  
+        #   4. 拼接 h 个头,恢复 (M, Np, d),再过输出投影
         out = out.transpose(0, 2, 1, 3).reshape(M, Np, d)
         out = self.WO(out)                        # (M, Np, d) 复数
         return out
@@ -210,12 +213,12 @@ def _erf_complex(z, N=30):
     项间递推(避免重复算阶乘):
         t_n / t_{n-1} = (-z²)/n · (2n-1)/(2n+1)
 
-    数值说明:
+    数值说明(|w| 指本函数的自变量;holomorphic_gelu 传入 w = z/√2):
       - erf 是整函数,级数全局收敛;
-      - 但它是交错级数,|z| 大时中间项会先增大再衰减(|z|=4 时峰值项 ~1e3,
-        抵消损失约 3 个数量级,float64 下无碍;|z|=6 时抵消 ~1e13,精度告急);
-      - 因此要求前级 LayerNorm 把 |z| 压在 ~4 以内(N=30 足够);
-      - calib.py 会打印 max|Im(logψ)| 与有限性,以此监控。
+      - 但实轴上是交错级数,中间项先增大再衰减:|w|=4 峰值项 ~1e5,|w|=6 峰值项 ~3e13;
+      - N=30 的截断误差(实轴相对误差):|w|=2.83 时 ~5e-8,|w|=3 时 ~2e-6,|w|=4 时完全失效(>100);
+      - 因此要求 GELU 输入 |z| ≲ 4(即 |w| ≲ 2.83);
+      - calib.py 打印 max|z|@GELU、max|Im(logψ)| 与有限性,以此监控。
     """
     z2 = z * z
     term = z                      # n=0 项:z/(0!·1)
@@ -231,12 +234,13 @@ def holomorphic_gelu(z):
 
         gelu(z) = z · Φ(z),   Φ(z) = (1 + erf(z/√2)) / 2
 
-    与 `reim_gelu` 的本质区别:
+    与已移除的 reim 版 GELU 的本质区别:
       - reim 版把复数拆成实部、虚部分别过 gelu,等价于 f(x)+i·f(y),
         这是一个非全纯映射(不满足 Cauchy-Riemann);
       - 本版沿复平面解析延拓,GELU 作为整函数的一部分保持全纯,
         ∂gelu/∂z̄ = 0。
-    全纯性会实质简化量子几何张量的结构(共轭雅可比项消失)
+    GELU 本身满足 ∂/∂z̄ = 0,但整网因 LayerNorm 的 |·|² 方差仍非全纯;
+    sr_jvp.py 走实参数 [Re O, Im O] 的一般路径,没有利用全纯简化。
     """
     return z * (1.0 + _erf_complex(z / jnp.sqrt(2.0))) / 2.0
 
@@ -254,7 +258,8 @@ def log_cosh(z):
 
     性质:
         - exp(-2z) 的模 = exp(-2Re z) ≤ 1,永不溢出;
-        - 两个分支在 Re(z)=0 处光滑衔接,无分支跳变;
+        - 两个分支在 Re(z)=0 处 exp(log cosh) 连续衔接;Im(log cosh) 可能相差 2π,
+          不影响 ψ 及比值 ψ(s')/ψ(s);
         - 输出复数:实部控制振幅 log|ψ|(可正可负,打破正定性),
           虚部提供相位。
     """
@@ -345,7 +350,7 @@ class ViTNQS(nnx.Module):
             y = block(y)                      # (M, Np, d) 复数
 
         #   4. 输出头:对全部 patch × feature 逐元 log[cosh],再求和
-        logpsi = jnp.sum(log_cosh(y), axis=(1, 2))    # (M,) 复数,128 项
+        logpsi = jnp.sum(log_cosh(y), axis=(1, 2))    # (M,) 复数,Np×d 项(当前 No=1, d=32 时为 128)
         return logpsi
         #ViT 输出的psi(s)往往未归一化！在训练脚本里要手动归一化
 
