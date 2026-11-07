@@ -64,10 +64,11 @@ def run_training():
     """子空间展开 + 截断的主循环(含 SR 参数更新)。"""
 
     # ---- 0. 初始化子空间与 ViT 模型 ----
-    # S 初始为 NS 个半满构型(大整数列表)。Nb 很小时 ini_config 枚举整个半满扇区,
-    # 此时扩展/截断不增删构型,子空间扩展退化为全空间精确求和。
+    # S 初始为 ini_config() 的 S0:4 个 NO 参考构型 + 连通层 BFS 填充(大整数列表)。
+    # 若 NS ≥ 参考构型所在 H 连通分量的维度,BFS 枚举完该分量即停(构型数可少于 NS),
+    # 此时扩展/截断不增删构型,退化为该分量内的精确求和。
     S = ini_config()
-    # ---- S0 体检:初始构型能量的统计(对照论文 Fig.2 初始 rel_err ≈ 1.05e-1)----
+    # ---- S0 体检:打印 S0 中构型对角能量 ⟨s|H|s⟩ 的 min/中位/max(不是 rel_err)----
     from ham_NO import H_act_on
     diags = sorted(H_act_on(s)[s] for s in S)
     print(f"S0 体检: 对角能量 min/中位/max = "
@@ -85,7 +86,7 @@ def run_training():
     timers = Timers()
 
     # ---- 0.2 能量记录(供 plot_energy.py 画图)----
-    # 数组下标 == iteration;异常轮保持 nan 占位,画图时掩掉。
+    # 数组下标 == iteration;循环内没有跳过分支,每轮都写入,只有 E 本身发散成 nan 时才是 nan,画图时掩掉。
     record_rel_err = np.full(train.max_iter, np.nan)
     record_E = np.full(train.max_iter, np.nan)
 
@@ -176,11 +177,11 @@ def run_training():
         model, E, info = sr_update(model, S_next, Se_idx2, x_Snext, logpsi_all,
                                    it, timers=timers, ops=ops)
 
-        # ---- (7) 与 ED 对照:相对误差 + 能量轨迹 ----
+        # ---- (7) 与 DMRG 参考能量 E_REF 对照:相对误差 + 能量轨迹 ----
         # E 已在 S_next 上求得;参数更新要到下一轮前向才生效。
         rel_err = abs(E - E_REF) / abs(E_REF)
 
-        # 变分能量应 ≥ E_REF(正常为正值);画图(log 坐标)时掩掉 ≤0 的异常点
+        # 存带符号值:E_θ 非变分,可低于 E_REF,此时为负;plot_energy.py 的 log 坐标会掩掉 ≤0 的点(日志第 27 项的现象)
         record_rel_err[it] = (E - E_REF) / abs(E_REF)
         record_E[it] = E
 
