@@ -218,3 +218,5 @@ __marimo__/
 .streamlit/secrets.toml
 CLAUDE.md
 *.pdf
+# ---- 本项目:训练结果的逐轮指标(logs/ 下,只存在本机)----
+*.npz
