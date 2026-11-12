@@ -82,7 +82,7 @@ import scipy.sparse.linalg as spla
 from hyperpara import net, train, Np, NL
 from config import _reference_configs, encode_NO
 from ham_NO import H_act_on, get_conn
-from vit_complex import ViTNQS, INIT_SCALE
+from vit_complex import ViTNQS                 # 作者初始化(见 vit_complex.py 文件头第 7 条)
 
 # ====================================================================
 # 测试参数(只属于本测试脚本,不是作者配置,故不放进 hyperpara.py)
@@ -242,7 +242,7 @@ if __name__ == "__main__":
     graphdef, state = nnx.split(model)
     vec, unravel = jax.flatten_util.ravel_pytree(state)
     print(f"\n网络:d={net.d}, h={net.h}, Nl={net.Nl}, 实参数数 P={vec.size}, "
-          f"INIT_SCALE={INIT_SCALE}, SEED={SEED}")
+          f"初始化=作者方案(线性层 normal(0.01),注意力 xavier_uniform), SEED={SEED}")
 
     x_pool = jnp.asarray(encode_NO(pool))      # (N_pool, Np, NL) 0/1 图片
     c_jax = jnp.asarray(c)

@@ -42,19 +42,46 @@ vit_complex.py —— 复数版 ViT 神经量子态前向传播
        也没有任何额外可学习参数;直接把最后一层的 (Np, d) 复数表示逐元素过 log[cosh],
        再对 patch 与特征feature两维求和,共 Np×d 个 log_cosh 项(而不是 Np×NL 个)。
        每个 log_cosh 项只作用于一个标量 y[p,f];patch 之间、特征之间的混合全部在 Transformer 块内完成。
+
+    7. 【初始化】按作者配置(2026-11-11,调试日志第 6 节第 6 条):
+           线性层(嵌入 embed、FFN 的 ff1/ff2): jax.nn.initializers.normal(stddev=0.01)
+           注意力的 Q/K/V 投影与输出投影 WO:   nn.initializers.xavier_uniform()
+       两者都直接在复数 dtype 上调用库函数生成复数矩阵,再拆成实部/虚部存储(第 1 条),
+       因此复数统计与 Flax 复数参数完全一致:
+           normal(0.01):   实部、虚部各为 N(0, 0.01²/2),E|W|² = 0.01² = 1e-4
+           xavier_uniform: 在复平面圆盘内均匀分布,E|W|² = 2/(fan_in+fan_out)
+                           Q/K/V/O 各自是 (d,d) 矩阵 → E|W|² = 1/d(d=32 时 1/32)
+       作者未说明、按推测实现的部分(已列入待问清单):
+           - 偏置全部置零(Flax nnx.Linear 的默认 bias_init);
+           - Q/K/V 按三个独立的 (d,d) 矩阵实现;若作者合成一个 (d,3d) 矩阵,xavier 方差会变为 1/(2d);
+           - 位置编码保持原实现:实部、虚部各 N(0, 0.02²/2);
+           - LayerNorm 的 γ = 1、β = 0(Flax 默认)。
 """
 
 import jax
 import jax.numpy as jnp
 from flax import nnx
 # ====================================================================
-# 初始化尺度扫描旋钮(论文未写明的实现细节):
-#   乘在 ComplexDense 的 W、b 抽签之后,不消耗随机流 → 不同 INIT_SCALE 共用同一组抽签,
-#   只改这些层的幅度(pos_embed 的 0.02 尺度和 LayerNorm 的 γ/β 不受影响)。
-#   训练本身有混沌噪声(日志第 20 项),比较时仍按 30% 噪声纪律判断。
-#   用calib.py标定
+# 权重初始化器(作者配置 2026-11-11,见文件头第 7 条)
+#   jax.nn.initializers 与 flax 的 nn.initializers 是同一组函数。
 # ====================================================================
-INIT_SCALE = 0.55    
+LINEAR_INIT = jax.nn.initializers.normal(stddev=0.01)   # embed、ff1、ff2:E|W|² = 1e-4
+ATTN_INIT = jax.nn.initializers.xavier_uniform()        # WQ/WK/WV/WO:E|W|² = 2/(fan_in+fan_out)
+
+
+def complex_init_split(init_fn, key, shape):
+    """用库初始化器直接生成复数矩阵,再拆成 (实部, 虚部) 两个实数数组。
+
+    为什么不分别给实部、虚部各调用一次实数初始化器:
+        那样 E|W|² 会变成实数情形的 2 倍(实部、虚部各贡献一份完整方差),
+        与作者在 Flax 里用复数参数时的统计不一致。直接在复数 dtype 上调用,
+        JAX 会把方差平分给实部和虚部,E|W|² 与实数情形的 E W² 相同。
+    复数精度跟随 x64 开关:训练时(x64 开)为 complex128,本文件单独自检时为 complex64。
+    """
+    cdtype = jax.dtypes.canonicalize_dtype(jnp.complex128)
+    W = init_fn(key, shape, cdtype)
+    return jnp.real(W), jnp.imag(W)
+
 
 # ====================================================================
 # 基础模块 1:复数线性层 ComplexDense
@@ -67,22 +94,20 @@ class ComplexDense(nnx.Module):
         W_re, W_im : (din, dout) 权重实部/虚部
         b_re, b_im : (dout,)     偏置实部/虚部
 
-    初始化:Glorot 方差 σ² = 2/(din+dout)。W、b 都从同一高斯抽取,实虚各分一半方差,
-    再整体乘 INIT_SCALE,即 E|W|² = E|b|² = INIT_SCALE²·σ²。
+    初始化:
+        W 由 kernel_init 在复数 dtype 上生成后拆分(见 complex_init_split);
+        调用方选择 LINEAR_INIT(线性层)或 ATTN_INIT(注意力投影)。
+        b 全部置零(Flax 默认;作者未说明,属推测)。
+    每层只消耗 1 个随机 key(旧版 W、b 实部虚部共 4 个),
+    所以同一 SEED 下的参数抽签与旧版不同,新旧结果不能逐位对比。
     """
-    def __init__(self, din, dout, *, rngs: nnx.Rngs):
-        # Glorot 标准差;每个分量实际标准差 = σ/√2 · INIT_SCALE(实虚平分方差)
-        sigma = jnp.sqrt(2.0 / (din + dout))
-
-        k = rngs.params()
-        self.W_re = nnx.Param(jax.random.normal(k, (din, dout)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
-        k = rngs.params()
-        self.W_im = nnx.Param(jax.random.normal(k, (din, dout)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
-
-        k = rngs.params()
-        self.b_re = nnx.Param(jax.random.normal(k, (dout,)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
-        k = rngs.params()
-        self.b_im = nnx.Param(jax.random.normal(k, (dout,)) * (sigma / jnp.sqrt(2.0))* INIT_SCALE)
+    def __init__(self, din, dout, *, kernel_init, rngs: nnx.Rngs):
+        W_re, W_im = complex_init_split(kernel_init, rngs.params(), (din, dout))
+        self.W_re = nnx.Param(W_re)
+        self.W_im = nnx.Param(W_im)
+        # 偏置零初始化:dtype 与权重的实部一致(x64 下为 float64)
+        self.b_re = nnx.Param(jnp.zeros((dout,), dtype=W_re.dtype))
+        self.b_im = nnx.Param(jnp.zeros((dout,), dtype=W_re.dtype))
 
     def __call__(self, x):
         # 输入 x:(..., din),实数(首层图片)或复数(后续层)
@@ -148,11 +173,12 @@ class ComplexMultiHeadAttention(nnx.Module):
         self.h = h
         self.dk = d // h                          # 每个头的维度 = d/h(论文 √(d/h))
 
-        # Q/K/V 三个投影 + 输出投影,全部复数
-        self.WQ = ComplexDense(d, d, rngs=rngs)
-        self.WK = ComplexDense(d, d, rngs=rngs)
-        self.WV = ComplexDense(d, d, rngs=rngs)
-        self.WO = ComplexDense(d, d, rngs=rngs)
+        # Q/K/V 三个投影 + 输出投影,全部复数,xavier_uniform 初始化(作者回复)。
+        # 三个独立的 (d,d) 矩阵 → E|W|² = 2/(d+d) = 1/d;偏置置零
+        self.WQ = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
+        self.WK = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
+        self.WV = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
+        self.WO = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
 
     def __call__(self, y):
         # y: (M, Np, d) 复数
@@ -281,13 +307,15 @@ class ComplexTransformerBlock(nnx.Module):
             y = y + FFN(LN2(y))
 
     FFN:两层复数全连接 d → 2d → d,中间 holomorphic_gelu(论文:隐藏维度 2d,GeLU)。
+    FFN 两层属于"线性层",用 normal(0.01) 初始化(作者回复):初始时 FFN 支路幅度很小,
+    块的输出主要由跳连接和注意力支路决定。
     """
     def __init__(self, d: int, h: int, *, rngs: nnx.Rngs):
         self.ln1 = ComplexLayerNorm(d)                 # 注意力前的 Pre-LN
         self.ln2 = ComplexLayerNorm(d)                 # FFN 前的 Pre-LN
         self.attn = ComplexMultiHeadAttention(d, h, rngs=rngs)
-        self.ff1 = ComplexDense(d, 2 * d, rngs=rngs)   # FFN 第一层:放大到 2d
-        self.ff2 = ComplexDense(2 * d, d, rngs=rngs)   # FFN 第二层:缩回 d
+        self.ff1 = ComplexDense(d, 2 * d, kernel_init=LINEAR_INIT, rngs=rngs)   # FFN 第一层:放大到 2d
+        self.ff2 = ComplexDense(2 * d, d, kernel_init=LINEAR_INIT, rngs=rngs)   # FFN 第二层:缩回 d
 
     def __call__(self, y):
         # y: (M, Np, d) 复数
@@ -316,10 +344,14 @@ class ViTNQS(nnx.Module):
         NL : 每条链长度 = (Nb+1)/2(每张图 Np*NL 个位)
     """
     def __init__(self, d: int, h: int, Nl: int, Np: int, NL: int, *, rngs: nnx.Rngs):
-        #   1. 嵌入层:把每个 patch(长度 NL 的实数 0/1)投影成 d 维复数  
-        self.embed = ComplexDense(NL, d, rngs=rngs)
+        #   1. 嵌入层:把每个 patch(长度 NL 的实数 0/1)投影成 d 维复数;
+        #      属于"线性层",normal(0.01) 初始化,偏置置零
+        self.embed = ComplexDense(NL, d, kernel_init=LINEAR_INIT, rngs=rngs)
 
-        #   2. 可学习位置编码:(Np, d) 也分成实部虚部，各半高斯,小方差  
+        #   2. 可学习位置编码:(Np, d) 也分成实部虚部，各半高斯,小方差
+        #      作者未说明其初始化,保持原实现 E|pos|² = 0.02²(待问)
+        #      注意:嵌入输出幅度 ~0.01·√(占据数),与位置编码同量级,
+        #      第一层 LayerNorm 会把两者之和重新归一化到 O(1)
         k = rngs.params()
         self.pos_embed_re = nnx.Param(
             jax.random.normal(k, (Np, d)) * (0.02 / jnp.sqrt(2.0))
@@ -400,3 +432,45 @@ if __name__ == '__main__':
 
     grads = nnx.grad(loss)(state, x)
     print(f"\n梯度结构一致: {jax.tree.structure(grads) == jax.tree.structure(state)}")
+
+    # ------------------------------------------------------------------
+    # 初始化自检 1:大矩阵上检验 complex_init_split 的复数统计
+    #   (512,512) 共 26 万个元素,统计涨落 < 1%,容差取 3%
+    #   normal(0.01):   E|W|² = 1e-4,实部方差 = 虚部方差 = 0.5e-4
+    #   xavier_uniform: E|W|² = 2/(512+512),圆盘均匀分布 → max|W| ≤ 圆盘半径 √(2·E|W|²)
+    # ------------------------------------------------------------------
+    print("\n[初始化自检 1] 大矩阵 (512,512) 的复数统计")
+    big = (512, 512)
+    for name, init_fn, var_exp in [("normal(0.01)", LINEAR_INIT, 0.01 ** 2),
+                                   ("xavier_uniform", ATTN_INIT, 2.0 / (512 + 512))]:
+        Wr, Wi = complex_init_split(init_fn, jax.random.PRNGKey(7), big)
+        var_abs = float(jnp.mean(Wr ** 2 + Wi ** 2))          # E|W|²
+        ratio_ri = float(jnp.var(Wr) / jnp.var(Wi))           # 实部/虚部方差比,应 ≈ 1
+        print(f"  {name:15s} E|W|²={var_abs:.4e}(期望 {var_exp:.4e})  "
+              f"实/虚方差比={ratio_ri:.3f}  max|W|={float(jnp.max(jnp.sqrt(Wr**2 + Wi**2))):.4f}")
+        assert abs(var_abs / var_exp - 1) < 0.03, f"{name} 的 E|W|² 偏离期望"
+        assert abs(ratio_ri - 1) < 0.03, f"{name} 的实部、虚部方差不相等"
+        if init_fn is ATTN_INIT:
+            assert float(jnp.max(Wr ** 2 + Wi ** 2)) <= 2 * var_exp * (1 + 1e-5), "xavier 超出圆盘半径"
+    print("  ✓ 两种初始化器的复数统计正确")
+
+    # ------------------------------------------------------------------
+    # 初始化自检 2:模型内每一层
+    #   - 全部偏置为零;
+    #   - 每层 E|W|² 与期望值之比(小矩阵涨落大,只做宽松检查 0.5~1.5,主要看打印):
+    #       embed/ff1/ff2 → 1e-4;WQ/WK/WV/WO → 1/d
+    # ------------------------------------------------------------------
+    print(f"\n[初始化自检 2] 模型各层(d={d},NL={NL})")
+    layers = [("embed", model.embed, 0.01 ** 2)]
+    for i, blk in enumerate(model.blocks):
+        for nm in ("WQ", "WK", "WV", "WO"):
+            layers.append((f"block{i}.{nm}", getattr(blk.attn, nm), 1.0 / d))
+        layers.append((f"block{i}.ff1", blk.ff1, 0.01 ** 2))
+        layers.append((f"block{i}.ff2", blk.ff2, 0.01 ** 2))
+    for nm, lyr, var_exp in layers:
+        var_abs = float(jnp.mean(lyr.W_re[...] ** 2 + lyr.W_im[...] ** 2))
+        b_max = float(jnp.max(jnp.abs(lyr.b_re[...])) + jnp.max(jnp.abs(lyr.b_im[...])))
+        print(f"  {nm:12s} 形状 {tuple(lyr.W_re.shape)}  E|W|²/期望 = {var_abs / var_exp:.3f}  max|b| = {b_max:.1e}")
+        assert b_max == 0.0, f"{nm} 的偏置不为零"
+        assert 0.5 < var_abs / var_exp < 1.5, f"{nm} 的 E|W|² 明显偏离期望"
+    print("  ✓ 偏置全为零,各层权重方差与作者初始化一致")
