@@ -7,17 +7,19 @@ main_training.py —— 子空间扩展 + ViT 前向 + 截断 + SR 更新的主�
                   Se_t = S_t ∪ Sc(去重)
         2. 前向:  对 Se_t 全部构型一次性计算 logψ(s)
         3. 截断:  按 |ψ|² 取 Se_t 中最大的 NS 个构型 → S_{t+1}
-        4. 补邻:  S_{t+1} ⊂ Se_t,但其邻居可能落在 Se_t 之外。
-                  补算 N(S_{t+1}) 不属于 Se_t部分 的振幅,使
-                  E_loc 求和精确闭合: Σ_{s'} 覆盖 s 的全部邻居。
-                  S 稳定后该集合为空,零开销。
-        5. SR:    求和域是截断后的新集合 S_{t+1}(在同一个 ψ 上计算
+        4. SR:    求和域是截断后的新集合 S_{t+1}(在同一个 ψ 上计算
                   p / E_loc / f / S),解 (S+λI)δ=f 后更新 θ。
+                  E_loc 的内层也只对 S_{t+1} 内的 s' 求和(含对角项 s' = s):
+                      E_loc(s) = Σ_{s' ∈ ({s} ∪ N(s)) ∩ S_{t+1}} H_{ss'} ψ(s')/ψ(s)
+                  于是 E = Σ_{s∈S} p(s) E_loc(s) = ⟨ψ_S|H|ψ_S⟩/⟨ψ_S|ψ_S⟩ 是 S 上的严格
+                  Rayleigh 商(变分,≥ E_exact(S)),SR 的力 f 是它的严格梯度(推导见 sr_jvp.py 文件头)。
+                  S 外构型的振幅不进入任何计算,所以不再"补邻";S_{t+1} ⊂ Se_t,
+                  它的振幅在第 2 步已经算好,SR 之前无需任何额外前向。
 
     截断依据:|ψ|² = exp(2·Re logψ),故只需按 logψ 的实部排序。
 
 误差分解诊断(只读,不改变训练的任何计算):
-    每轮把 E_θ 拆成 T₁(子空间)、T₂(拟合+优化)、T₃(leak),由 diag_split.SplitDiagnostics 完成;
+    每轮把 E_θ − E_REF 拆成 T₁(子空间)、T₂(拟合+优化),由 diag_split.SplitDiagnostics 完成;
     公式、保存内容与文件位置见 diag_split.py 文件头。终端输出同时写进 logs/ 下的 .log 文件。
 
 运行方式:
@@ -38,7 +40,7 @@ import time
 
 from hyperpara import physics, net, train, L, Np, NL
 from config import ini_config, encode_NO          # 构型初始化与图片编码
-from ham_NO import get_conn as _get_conn_raw      # 邻居查询(扩展/补邻用) 
+from ham_NO import get_conn as _get_conn_raw      # 邻居查询(第 1 步扩展用)
 #from ham_NO import H_act_on
 from functools import lru_cache
 from vit_complex import ViTNQS                    # 复数版 ViT
@@ -104,9 +106,8 @@ def run_training():
             for s in S:
                 Se_set.update(get_conn(s))
 
-        # ---- (2) 定序 + 建索引 ----
-        Se_list = sorted(Se_set)                  # 本轮唯一稳定索引
-        Se_idx = {v: i for i, v in enumerate(Se_list)}   # 大 int -> 下标
+        # ---- (2) 定序 ----
+        Se_list = sorted(Se_set)                  # 本轮唯一稳定顺序(编码、前向、截断都按此顺序)
 
         # ---- (3) 编码成图片 + 一次性前向 ----
         with timers.scope("encode"):
@@ -131,7 +132,6 @@ def run_training():
         # shift 之前记录原始展宽:发散预警指标,健康态 ≤ ~30
         raw_spread = float(jnp.max(jnp.real(logpsi_raw)) - jnp.min(jnp.real(logpsi_raw)))
         # 按实部平移(相位不动):整体重标度 ψ -> e^{-c} ψ,不改变概率与 ψ(s')/ψ(s) 比值。
-        # 补算的邻居必须共用同一个平移常数 shift_c,否则 ψ(s')/ψ(s) 全部错位。
         shift_c = jnp.max(jnp.real(logpsi_raw))
         logpsi_se = logpsi_raw - shift_c
 
@@ -142,68 +142,42 @@ def run_training():
         top_idx = np.argsort(-prob_norm)[:NS]
         S_next = [Se_list[i] for i in top_idx]
 
-        # ---- (5) 补邻:S_next 的邻居中不属于 Se 的部分 ----
-        # S_next ⊂ Se,但它的邻居可能落在 Se 之外，N(N(S))邻居的邻居。
-        # 只有补齐这一小块,才能在 S_next 上精确计算 E_loc(s) = Σ_{s'} H_{ss'} ψ(s')/ψ(s)。
-        # 截断换血时补邻尤其明显 → S 稳定后 extra_set ⊆ Se 恒成立 → extra_list 为空 → 本步零开销(不触发前向)。
-        with timers.scope("extra"):
-            # S_next里有来自S和N(S)的，只有来自N(S)的需要补充邻居，来自S的元素的邻居已经包含在Se
-            new_cfgs = set(S_next) - set(S) # 在 S_next 里、但不在 S 里的元素
-            extra_set = set()
-            for s in new_cfgs:
-                extra_set.update(get_conn(s))
-            extra_list = sorted(extra_set - Se_set)
-            n_extra = len(extra_list)
-
-            if n_extra:
-                bits_e = encode_NO(extra_list)
-                pad_e = (-n_extra) % 256
-                if pad_e:
-                    bits_e = np.pad(bits_e, ((0, pad_e), (0, 0), (0, 0)))
-                # 与 Se 共用同一个平移常数 shift_c
-                lp_e = np.asarray(
-                    ops.forward(vec_now, jnp.asarray(bits_e))[:n_extra]
-                ) - shift_c
-                logpsi_all = np.concatenate([np.asarray(logpsi_se), lp_e])
-            else:
-                logpsi_all = np.asarray(logpsi_se)
-
-            # 合并查找表:Se 原有下标 + 新增邻居接在其后
-            Se_idx2 = dict(Se_idx)
-            for k, v in enumerate(extra_list):
-                Se_idx2[v] = N_se + k
-
-        # ---- (6) SR 参数更新:求和域 = 截断后的新集合 S_next ----
+        # ---- (5) SR 参数更新:外层与内层求和都只在 S_next 内 ----
         # 与论文顺序一致:先扩展、后截断,再在新集合上计算
         # p / E_loc / f / S 并更新 θ(仍使用本轮前向得到的同一个 ψ)。
+        # S_next ⊂ Se,它的图片与 logψ 直接按 top_idx 从 Se 的结果里取出,无需额外前向。
         x_Snext = x_jax[jnp.asarray(top_idx)]      # S_next 的图片 = Se_list[top_idx] 对应行
+        logpsi_Snext = np.asarray(logpsi_se)[top_idx]   # S_next 的 logψ(含平移 shift_c,比值不受影响)
 
-        model, E, info = sr_update(model, S_next, Se_idx2, x_Snext, logpsi_all,
+        model, E, info = sr_update(model, S_next, x_Snext, logpsi_Snext,
                                    it, timers=timers, ops=ops)
 
-        # ---- (7) 与 DMRG 参考能量 E_REF 对照:相对误差 + 能量轨迹 ----
+        # ---- (6) 与 DMRG 参考能量 E_REF 对照:相对误差 + 能量轨迹 ----
         # E 已在 S_next 上求得;参数更新要到下一轮前向才生效。
         rel_err = abs(E - E_REF) / abs(E_REF)
 
-        # ---- (8) 本轮监控 ----
+        # ---- (7) 本轮监控 ----
         # 只打印主循环独有的量;λ / lr / N_eff / max|E_loc| / ‖δ‖/‖θ‖ / resid
         # 由 sr_jvp.py 的 [SR] 行输出,此处不再重复。
         overlap = len(set(S) & set(S_next))       # 旧构型保留数
         max_prob = float(prob_norm[top_idx[0]])
+        # massS = Σ_{s∈S_next} |ψ(s)|² / Σ_{s∈Se} |ψ(s)|²:截断后留下的概率质量占比
+        # (接近 1 → 被截掉的构型振幅很小,截断对当前 ψ 影响小)
+        mass_S = float(prob_norm[top_idx].sum())
         print(
             f"iter {it:4d}: "
             f"|Se|={N_se:6d}  "
-            f"补邻={n_extra:5d}  "
             f"保留={overlap:3d}/{NS}  "
+            f"massS={mass_S:.4f}  "
             f"pmax={max_prob:.3e}  "
             f"spread={raw_spread:5.1f}  "
             f"E={E:.10f}  "
             f"rel={rel_err:.3e}"
         )
 
-        # ---- (9) 误差分解诊断(只读;所有量与 E 对应同一对 (θ_t, S_{t+1}),细节见 diag_split.py)----
+        # ---- (8) 误差分解诊断(只读;所有量与 E 对应同一对 (θ_t, S_{t+1}),细节见 diag_split.py)----
         with timers.scope("diag"):
-            diag.step(it, E, info, S_next, Se_idx2, logpsi_all, get_conn)
+            diag.step(it, E, info, S_next)
 
         S = S_next
 

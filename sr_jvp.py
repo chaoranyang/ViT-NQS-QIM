@@ -2,26 +2,40 @@
 sr_jvp.py —— 复数随机重构(SR)参数更新(NetKet QGTJacobianDense 路径)
 
 算法(复数波函数 SR,实数参数):
-    对截断后的子空间 S_next(= S_{t+1},由主循环传入)计算:
-        E_loc(s) = Σ_{s'} <s|H|s'> · ψ(s')/ψ(s)          (复数)
-        p(s)     = |ψ(s)|² / Σ_{s∈S}|ψ(s)|²              (实数概率)
-        O_k(s)   = ∂ logψ(s) / ∂θ_k                      (复数,θ 为实数参数)
-    组装量子几何张量与力向量:
+    对截断后的子空间 S = S_{t+1}(由主循环传入)计算:
+        E_loc(s) = Σ_{s' ∈ ({s} ∪ N(s)) ∩ S} <s|H|s'> · ψ(s')/ψ(s)    (复数;内层只对 S 内的 s' 求和)
+        p(s)     = |ψ(s)|² / Σ_{s'∈S}|ψ(s')|²                          (实数概率,论文 Eq. S6)
+        O_k(s)   = ∂ logψ(s) / ∂θ_k                                    (复数,θ 为实数参数)
+    组装量子几何张量与力向量(论文 Eq. S7,外层求和全部在 S 内):
         S_kk' = Re[ ⟨O_k* O_k'⟩ − ⟨O_k*⟩⟨O_k'⟩ ]         (实数对称半正定)
         E     = Re Σ_{s∈S} p(s) E_loc(s)
         f_k   = 2·Re[ ⟨(O_k − ⟨O_k⟩)* (E_loc − E)⟩ ]      (实数)
     解 (S + λI) x = f,更新:
         θ ← θ − η · x
 
-能量分拆(误差分解诊断用,只读,不参与 SR 的任何计算):
-    把 E_loc 的求和按 s' 是否属于 S 分成两部分(R = S 外的邻居):
-        E_loc(s) = E_loc^in(s) + E_loc^out(s),   in: s' ∈ S,  out: s' ∈ R
-    由 p(s) E_loc(s) = ψ*(s) Σ_{s'} H_{ss'} ψ(s') / ‖ψ_S‖²(因 |ψ(s)|²/ψ(s) = ψ*(s)):
-        E_S = Σ_{s∈S} p E_loc^in  = ⟨ψ_S|H|ψ_S⟩ / ‖ψ_S‖²   S 内严格 Rayleigh 商;H 厄米 ⟹ 实数,且 ≥ E_exact(S)
-        L   = Σ_{s∈S} p E_loc^out = ⟨ψ_S|H|ψ_R⟩ / ‖ψ_S‖²   leak 项;复数,实部可正可负
-        E   = Re Σ p E_loc = E_S + Re L                     (恒等式,浮点舍入内成立)
-    用途:主循环据此拆出 T₁ = E_exact(S) − E_REF、T₂ = E_S − E_exact(S)、T₃ = Re L。
-    Im E_S 应 ≈ 0,可作正确性检查;Im L 一般不为 0,即上面力向量注释里的 Im⟨E_loc⟩ 来源。
+内层求和只取 s' ∈ S 的含义(与论文 Eq. S3 的区别):
+    论文 (S3) 的 s' 取全空间,即 s 的全部邻居;本实现只保留同时在 S 内的邻居 s',
+    对角项 s' = s 永远保留。S 外构型的振幅不进入任何计算(主循环因此不再"补邻")。
+
+    (1) 能量是 S 上的严格 Rayleigh 商。记 ψ_S = P_S ψ(只保留 S 内分量的向量),
+        利用 p(s)·ψ(s')/ψ(s) = ψ*(s) ψ(s') / Σ_S|ψ|²:
+            E = Σ_{s∈S} p(s) E_loc(s)
+              = Σ_{s,s'∈S} ψ*(s) H_{ss'} ψ(s') / Σ_{s∈S}|ψ(s)|²
+              = ⟨ψ_S|H|ψ_S⟩ / ⟨ψ_S|ψ_S⟩
+        H 厄米 ⟹ E 为实数(虚部只来自浮点舍入,可作正确性检查),
+        且 E ≥ E_exact(S) ≥ E_0(变分;E_exact(S) = H_SS 的最低本征值)。
+        分子、分母必须是同一个向量 ψ_S,所以 p 的分母只对 S 求和,不能扩大到 Se。
+
+    (2) 力向量是 E 的严格梯度。设参数 θ_k 为实数,∂ψ(s)/∂θ_k = O_k(s) ψ(s):
+            ∂E/∂θ_k = [ Σ_{s,s'∈S} (O_k*(s)ψ*(s) H_{ss'} ψ(s') + ψ*(s) H_{ss'} O_k(s')ψ(s')) ] / Z
+                      − E · Σ_{s∈S} 2 Re[O_k(s)] |ψ(s)|² / Z,          Z = Σ_S|ψ|²
+        方括号内两项:交换求和指标 s ↔ s' 并利用 H_SS 厄米(H_{s's} = H_{ss'}*),后一项是前一项的
+        复共轭,合起来 = 2 Re Σ_{s∈S} |ψ(s)|² O_k*(s) E_loc(s);再与第二行合并得
+            ∂E/∂θ_k = 2 Re Σ_{s∈S} p(s) O_k*(s) [E_loc(s) − E]
+                    = 2 Re ⟨(O_k − ⟨O_k⟩)* (E_loc − E)⟩        (因 Σ p (E_loc − E) = 0)
+        正是上面的 f_k。这一步要求两重求和都在同一个集合 S 内:若 s' 取 S 外邻居,
+        E 还依赖 ψ(s'∉S),其导数项不在 f 中,f 就不再是任何能量的梯度。
+        另外 ⟨E_loc⟩ = E 为实数,中心化与否给出相同的 f(交叉项 Im⟨O_k⟩·Im⟨E_loc⟩ = 0)。
 
 与 NetKet 3(论文所用)的逐条对应:
     1. 雅可比物化:等价于 nkjax.jacobian(mode="complex", dense=True,
@@ -115,78 +129,66 @@ class SrOps:
 # ====================================================================
 # 第 2 部分:局部能量 E_loc(CPU 侧,Python 循环)
 # ====================================================================
-def compute_eloc_split(S, Se_idx, logpsi_se):
+def compute_eloc_S(S, logpsi_S):
     """
-    在同一次遍历中计算:
-        E_loc(s)    = Σ_{s'}     <s|H|s'> · exp[logψ(s') − logψ(s)]   SR 用的完整局部能量
-        E_loc_in(s) = Σ_{s'∈S}   <s|H|s'> · exp[logψ(s') − logψ(s)]   只对 S 内的 s' 求和(诊断用)
-    并顺带收集 H 限制在 S 上的全部非零矩阵元(诊断用,供主循环拼 H_SS 求 E_exact(S))。
+    局部能量,内层只对 S 内的 s' 求和:
 
-    - S 的邻居 s' 必在 Se_idx 内(主循环传入 Se ∪ 补邻),求和精确闭合;
+        E_loc(s) = Σ_{s' ∈ ({s} ∪ N(s)) ∩ S} <s|H|s'> · exp[logψ(s') − logψ(s)],   s ∈ S
+
+    并顺带收集 H 限制在 S 上的全部非零矩阵元 H_SS(诊断用:求 E_exact(S) 与 S 内精确基态)。
+
+    实现:对每个 s ∈ S 用 H_act_on(s) 列出 s 自己和它的全部邻居 s',只保留 s' ∈ S 的项。
+        - 不区分 s 来自上一轮的 S_t 还是来自 N(S_t):邻居一律现查,再与 S 求交集。
+          (若只靠"谁生成了 s"的反查表,会漏掉同样来自 N(S_t)、彼此之间也相连的构型。)
+        - 对角项 s' = s 必在 S 内,永远保留 → 即使 s 没有任何邻居留在 S 里,E_loc(s) = H_ss 仍有定义。
+        - S 外构型的振幅一概不需要,所以主循环不再"补邻"。
     - 当前矩阵元为实数,<s|H|s'> = <s'|H|s>;若系数变复,需对 coeff 取共轭;
     - float64 下 exp 上溢线 ±709,不做任何裁剪(NetKet 原样,病态由上层打印)。
-    - E_loc 的累加顺序与拆分前完全相同(acc 仍逐项累加全部 s'),
-      E_loc_in 用独立的累加器 acc_in,因此 SR 用到的 E_loc 逐位不变,训练轨迹不受诊断影响。
 
+    参数:
+        S        : NS 个构型(大整数列表)
+        logpsi_S : (NS,) 复数 logψ,与 S 同序(可含任意整体平移,比值不受影响)
     返回:
-        E_loc    : (NS,) 复数
-        E_loc_in : (NS,) 复数
-        hss      : (rows, cols, vals) 三个列表,H_SS[rows[k], cols[k]] = vals[k],
-                   行列下标是构型在 S 中的位置(0..NS−1);包含对角元
+        E_loc : (NS,) 复数
+        hss   : (rows, cols, vals) 三个列表,H_SS[rows[k], cols[k]] = vals[k],
+                行列下标是构型在 S 中的位置(0..NS−1);包含对角元
     """
-    logpsi = np.asarray(logpsi_se, dtype=np.complex128)
+    logpsi = np.asarray(logpsi_S, dtype=np.complex128)
     S_pos = {s: a for a, s in enumerate(S)}          # 构型 → 在 S 中的位置;用于判断 s' ∈ S
 
     E_loc = np.zeros(len(S), dtype=np.complex128)
-    E_loc_in = np.zeros(len(S), dtype=np.complex128)
     rows, cols, vals = [], [], []
     for a, s in enumerate(S):
-        i = Se_idx[s]
-        acc = 0.0 + 0.0j                              # 全部 s' 的累加(SR 用,与原实现相同)
-        acc_in = 0.0 + 0.0j                           # 仅 s' ∈ S 的累加(E_S 用)
-        for sp, coeff in H_act_on(s).items():         # H_act_on(s) = {s': <s'|H|s>}
-            j = Se_idx[sp]
-            term = coeff * np.exp(logpsi[j] - logpsi[i])
-            acc += term
+        acc = 0.0 + 0.0j
+        for sp, coeff in H_act_on(s).items():         # H_act_on(s) = {s': <s'|H|s>},含 s' = s 的对角元
             b = S_pos.get(sp)
-            if b is not None:                         # s' 也在 S 内
-                acc_in += term
-                rows.append(b); cols.append(a); vals.append(coeff)   # H_SS[s', s] = <s'|H|s>
+            if b is None:                             # s' 不在 S 内:按定义不计入
+                continue
+            acc += coeff * np.exp(logpsi[b] - logpsi[a])
+            rows.append(b); cols.append(a); vals.append(coeff)   # H_SS[s', s] = <s'|H|s>
         E_loc[a] = acc
-        E_loc_in[a] = acc_in
-    return E_loc, E_loc_in, (rows, cols, vals)
-
-
-def compute_eloc(S, Se_idx, logpsi_se):
-    """
-    只返回完整局部能量 E_loc(s) = Σ_{s'} <s|H|s'> · exp[logψ(s') − logψ(s)]。
-    保留原接口,供 calib.py、diag_post.py 等只需要 E_loc 的脚本调用;
-    计算本身由 compute_eloc_split 完成,结果与拆分前逐位相同。
-    """
-    E_loc, _, _ = compute_eloc_split(S, Se_idx, logpsi_se)
-    return E_loc
+    return E_loc, (rows, cols, vals)
 
 
 # ====================================================================
 # 第 3 部分:SR 更新主函数
 # ====================================================================
-def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
+def sr_update(model, S, x_S, logpsi_S, it, timers=None, ops=None):
     """
     执行一步 SR 参数更新(NetKet 忠实路径:物化 O + 稠密 CG + 更新,无守卫)。
 
     参数:
         model    : nnx 模型(复数 ViT)
-        S        : 截断后的 NS 个构型 S_next(SR 求和域)
-        Se_idx   : 构型大整数 -> logpsi_se 下标的反查表(主循环传 Se_idx2,覆盖 Se ∪ 补邻)
+        S        : 截断后的 NS 个构型 S_{t+1}(SR 的全部求和域:外层 s 与内层 s' 都在 S 内)
         x_S      : (NS, Np, NL) S 中构型的 0/1 图片
-        logpsi_se: (N_se + n_extra,) Se ∪ 补邻 的 logψ(主循环传 logpsi_all,共用同一 shift_c)
+        logpsi_S : (NS,) S 上的复数 logψ,与 S 同序(主循环本轮前向的结果,已整体平移)
         it       : 迭代轮数(用于 λ、η 线性调度)
         timers   : Timers 实例,实际必传(函数体直接调用 timers.scope,默认 None 会报错)
         ops      : SrOps;None 时现场新建(CG 热启动清零,且需重新编译)
 
     返回 (model_new, E, info):
-        E    : E_θ = Re Σ p E_loc(含 S 外振幅,不是严格 Rayleigh 商)
-        info : 监控量 + 能量分拆诊断量(E_S、L、p、logψ_S、H_SS 矩阵元),见函数末尾
+        E    : E_θ = ⟨ψ_S|H|ψ_S⟩ / ⟨ψ_S|ψ_S⟩,S 上的严格 Rayleigh 商(变分,≥ E_exact(S))
+        info : 监控量 + 诊断量(p、logψ_S、H_SS 矩阵元),见函数末尾
     """
     if ops is None:
         ops = SrOps(model)
@@ -195,39 +197,27 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
     vec, _ = jax.flatten_util.ravel_pytree(state_now)
     P = vec.size
     NS_l = len(S)
+    logpsi_S = np.asarray(logpsi_S, dtype=np.complex128)
 
-    # ---- 1. 局部能量(同时得到 S 内部分 E_loc_in 与 H_SS 矩阵元,供诊断)----
+    # ---- 1. 局部能量:内层只对 S 内的 s' 求和(同时收集 H_SS 矩阵元,供诊断)----
     with timers.scope("eloc"):
-        E_loc, E_loc_in, hss = compute_eloc_split(S, Se_idx, logpsi_se)
+        E_loc, hss = compute_eloc_S(S, logpsi_S)
 
-    # ---- 2. 概率权重与能量估计量 E(即 E_θ:E_loc 含 S 外振幅,不是严格 Rayleigh 商,可低于 E_exact(S))----
+    # ---- 2. 概率权重与能量 E = Σ_S p E_loc = ⟨ψ_S|H|ψ_S⟩/⟨ψ_S|ψ_S⟩(推导见文件头 (1))----
     with timers.scope("assemble"):
-        logpsi_S = np.asarray(logpsi_se, dtype=np.complex128)[
-            [Se_idx[s] for s in S]
-        ]
         psi2 = np.exp(2.0 * np.real(logpsi_S))
-        p = psi2 / psi2.sum()                     # (NS,) 归一化概率
+        p = psi2 / psi2.sum()                     # (NS,) 归一化概率,分母只对 S 求和(论文 Eq. S6)
 
-        E = float(np.real(np.sum(p * E_loc)))
+        E_c = np.sum(p * E_loc)                   # 复数;H 厄米 ⟹ 虚部只来自浮点舍入
+        E = float(np.real(E_c))
+        E_imag = float(np.imag(E_c))              # 正确性检查:应 ~1e-12 以下
 
         # —— 诊断指标(不改变任何数学) ——
-        w_se = np.exp(2.0 * np.real(np.asarray(logpsi_se)))
-        mass_S = float(psi2.sum() / w_se.sum())          # S 占 Se ∪ 补邻 的概率质量
-        var_eloc = float(np.sum(p * np.abs(E_loc - E) ** 2))  # 能量方差:精确 GS 处 → 0
+        var_eloc = float(np.sum(p * np.abs(E_loc - E) ** 2))  # 能量方差:ψ_S 为 H_SS 本征向量时 → 0
         neff = 1.0 / float(np.sum(p**2))          # 有效状态数(分布偏斜度)
         max_eloc = float(np.max(np.abs(E_loc)))
-        spread_S = float(-np.min(np.real(logpsi_S)))   # 主循环已 shift(max Re=0)
+        spread_S = float(np.max(np.real(logpsi_S)) - np.min(np.real(logpsi_S)))   # S 内 Re logψ 的峰峰值
         n_bad_eloc = int(np.sum(~np.isfinite(E_loc)))
-
-        # —— 能量分拆(误差分解诊断,只读;推导见文件头"能量分拆")——
-        # E_S:S 内严格 Rayleigh 商,应为实数(虚部只来自浮点舍入,可作正确性检查)
-        E_S_c = np.sum(p * E_loc_in)
-        # L:leak 项 = S 外邻居 R 的贡献;E = E_S + Re L 在浮点舍入内成立
-        L_c = np.sum(p * (E_loc - E_loc_in))
-        E_S = float(np.real(E_S_c))
-        E_S_imag = float(np.imag(E_S_c))
-        L_re = float(np.real(L_c))
-        L_im = float(np.imag(L_c))
 
     # ---- 3. 物化 O:逐样本 jacrev,一次 vmap ----
     with timers.scope("jacob"):
@@ -244,9 +234,11 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         # 与 y 错配导致 f 被洗牌——上一版的 bug 根源。
         O_flat = O_s.transpose(1, 0, 2).reshape(2 * NS_l, P)
 
-        # 力向量:f = 2·O_flatᵀ · [√p⊙Re(E_loc−E); √p⊙Im(E_loc)],即 f_k = 2 Σ p Re[(O_k−⟨O_k⟩)*(E_loc−E)]
-        # 系数 2:论文 Eq.S5 未写,来自 NetKet 的 log_pdf = 2·Re logψ(日志第 14 项)。
-        # 与未中心化形式相差 2·Im⟨O_k⟩·Im⟨E_loc⟩:E 只取实部,S 上 ⟨E_loc⟩ 含 leak 时虚部不必为 0,交叉项不严格抵消。
+        # 力向量:f = 2·O_flatᵀ · [√p⊙Re(E_loc−E); √p⊙Im(E_loc−E)],即 f_k = 2 Σ p Re[(O_k−⟨O_k⟩)*(E_loc−E)]
+        # 这是 E = ⟨ψ_S|H|ψ_S⟩/⟨ψ_S|ψ_S⟩ 对实参数 θ_k 的严格梯度 ∂E/∂θ_k(推导见文件头 (2))。
+        # 系数 2:论文 Eq.S5 未写,来自 NetKet 的 log_pdf = 2·Re logψ(日志第 14 项);
+        #         由上述推导,2 正是 ∂E/∂θ_k 本身的系数。
+        # ⟨E_loc⟩ = E 为实数,中心化与否给出相同的 f。
         z = E_loc - E
         y = np.concatenate([np.sqrt(p) * np.real(z), np.sqrt(p) * np.imag(z)])
         f = 2.0*(O_flat.T @ y)                          # (P,)
@@ -287,11 +279,13 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         warn.append(f"‖δ‖/‖θ‖大")
     if cg_info > 0:
         warn.append("CG未收敛")
+    if abs(E_imag) > 1e-9:    # H 厄米 ⟹ Rayleigh 商为实数;虚部大说明 H_SS 收集或下标有错
+        warn.append(f"Im E={E_imag:.1e}")
     flag = ("  ⚠ " + " | ".join(warn)) if warn else ""
     print(f"          [SR] λ={lam:.2e} lr={lr:.2e} N_eff={neff:.1f} "
           f"spread(S)={spread_S:.1f} max|E_loc|={max_eloc:.1f} "
-          f"‖δ‖/‖θ‖={delta_ratio:.2e} resid={resid:.1e}{flag}"
-          f"√Var={var_eloc**0.5:.1e} massS={mass_S:.3f} cg={cg_info}{flag}")
+          f"‖δ‖/‖θ‖={delta_ratio:.2e} resid={resid:.1e} "
+          f"√Var={var_eloc**0.5:.1e} cg={cg_info}{flag}")
 
     # ---- 8. 参数更新:θ ← θ − η·x(NetKet 原样,无任何拦截)----
     model_new = nnx.merge(ops.graphdef, ops.unravel(vec - lr * delta))
@@ -306,15 +300,11 @@ def sr_update(model, S, Se_idx, x_S, logpsi_se, it, timers=None, ops=None):
         "resid": resid,
         "n_bad_eloc": n_bad_eloc,
         "n_bad_delta": n_bad_delta,
-        "mass_S": mass_S,          # 诊断:子空间覆盖度
-        "var_eloc": var_eloc,      # 诊断:波函数质量(精确 GS 处 → 0)
+        "var_eloc": var_eloc,      # 诊断:ψ_S 离 H_SS 本征向量多远(本征向量处 → 0)
         "f_norm": f_norm,          # 诊断:优化是否还在推进
         "cg_info": cg_info,        # 当前恒为 -1(cg 的 info 为 None),不反映收敛,见 resid
-        # —— 能量分拆诊断量(全部对应本轮更新前的 θ 与本轮的 S,与 E 同一对)——
-        "E_S": E_S,                # S 内严格 Rayleigh 商(实部)
-        "E_S_imag": E_S_imag,      # E_S 的虚部,应 ≈ 0(正确性检查)
-        "L_re": L_re,              # leak 实部 = T₃;E = E_S + L_re
-        "L_im": L_im,              # leak 虚部(力向量中心化交叉项的来源)
+        # —— 误差分解诊断量(全部对应本轮更新前的 θ 与本轮的 S,与 E 同一对)——
+        "E_imag": E_imag,          # E 的虚部,应 ≈ 0(正确性检查)
         "p": p,                    # (NS,) S 内归一化概率,与 S 同序
         "logpsi_S": logpsi_S,      # (NS,) S 上的复数 logψ(已 shift),与 S 同序;供算保真度 F_S
         "hss": hss,                # H_SS 的 (rows, cols, vals),下标为 S 中位置;供求 E_exact(S)
