@@ -43,17 +43,20 @@ vit_complex.py —— 复数版 ViT 神经量子态前向传播
        再对 patch 与特征feature两维求和,共 Np×d 个 log_cosh 项(而不是 Np×NL 个)。
        每个 log_cosh 项只作用于一个标量 y[p,f];patch 之间、特征之间的混合全部在 Transformer 块内完成。
 
-    7. 【初始化】按作者配置(2026-11-11,调试日志第 6 节第 6 条):
+    7. 【初始化】按作者配置(2026-11-13 确认 Q/K/V 合并与偏置为零):
            线性层(嵌入 embed、FFN 的 ff1/ff2): jax.nn.initializers.normal(stddev=0.01)
            注意力的 Q/K/V 投影与输出投影 WO:   nn.initializers.xavier_uniform()
        两者都直接在复数 dtype 上调用库函数生成复数矩阵,再拆成实部/虚部存储(第 1 条),
        因此复数统计与 Flax 复数参数完全一致:
            normal(0.01):   实部、虚部各为 N(0, 0.01²/2),E|W|² = 0.01² = 1e-4
            xavier_uniform: 在复平面圆盘内均匀分布,E|W|² = 2/(fan_in+fan_out)
-                           Q/K/V/O 各自是 (d,d) 矩阵 → E|W|² = 1/d(d=32 时 1/32)
-       作者未说明、按推测实现的部分(已列入待问清单):
-           - 偏置全部置零(Flax nnx.Linear 的默认 bias_init);
-           - Q/K/V 按三个独立的 (d,d) 矩阵实现;若作者合成一个 (d,3d) 矩阵,xavier 方差会变为 1/(2d);
+                           Q/K/V 合成一个 (d, 3d) 矩阵 WQKV 一起初始化(作者确认):
+                               E|W|² = 2/(d + 3d) = 1/(2d)(d=32 时 1/64)
+                           输出投影 WO 单独为 (d, d):E|W|² = 2/(d + d) = 1/d(d=32 时 1/32)
+       已确认:偏置全部置零。
+       仍按推测实现的部分:
+           - WQKV 按普通的二维 (d, 3d) 矩阵计算 fan(相当于 Flax 的 Dense(3d));
+             若作者用多维 kernel 的 DenseGeneral,fan 的算法不同,方差也会不同;
            - 位置编码保持原实现:实部、虚部各 N(0, 0.02²/2);
            - LayerNorm 的 γ = 1、β = 0(Flax 默认)。
 """
@@ -66,7 +69,7 @@ from flax import nnx
 #   jax.nn.initializers 与 flax 的 nn.initializers 是同一组函数。
 # ====================================================================
 LINEAR_INIT = jax.nn.initializers.normal(stddev=0.01)   # embed、ff1、ff2:E|W|² = 1e-4
-ATTN_INIT = jax.nn.initializers.xavier_uniform()        # WQ/WK/WV/WO:E|W|² = 2/(fan_in+fan_out)
+ATTN_INIT = jax.nn.initializers.xavier_uniform()        # WQKV、WO:E|W|² = 2/(fan_in+fan_out)
 
 
 def complex_init_split(init_fn, key, shape):
@@ -159,7 +162,7 @@ class ComplexMultiHeadAttention(nnx.Module):
     """
     复数多头自注意力(论文图 1(c) 上半部分):
 
-        Q = y @ WQ,  K = y @ WK,  V = y @ WV    复数投影(含偏置)
+        [Q | K | V] = y @ WQKV                  一个 (d, 3d) 复数投影(含偏置),输出按列三等分
         s_ij = (q_i · k_j)/√dk                  复数分数:不取实部,k 不取共轭
         α_ij = exp(s_ij) / Σ_j' exp(s_ij')      复数 softmax,权重为复数
         A_i  = Σ_j α_ij v_j                     复数权重混合复数 value
@@ -173,21 +176,21 @@ class ComplexMultiHeadAttention(nnx.Module):
         self.h = h
         self.dk = d // h                          # 每个头的维度 = d/h(论文 √(d/h))
 
-        # Q/K/V 三个投影 + 输出投影,全部复数,xavier_uniform 初始化(作者回复)。
-        # 三个独立的 (d,d) 矩阵 → E|W|² = 2/(d+d) = 1/d;偏置置零
-        self.WQ = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
-        self.WK = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
-        self.WV = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
+        # Q/K/V 合成一个 (d, 3d) 复数矩阵,一起做 xavier_uniform 初始化:
+        #   fan_in = d,fan_out = 3d → E|W|² = 2/(d + 3d) = 1/(2d)
+        #   (分成三个独立 (d,d) 矩阵时为 1/d,方差是这里的 2 倍,初始振幅地形更陡,见调试日志第 33、34 项)
+        # 输出投影 WO 单独为 (d, d):E|W|² = 1/d。偏置全部置零。
+        self.WQKV = ComplexDense(d, 3 * d, kernel_init=ATTN_INIT, rngs=rngs)
         self.WO = ComplexDense(d, d, kernel_init=ATTN_INIT, rngs=rngs)
 
     def __call__(self, y):
         # y: (M, Np, d) 复数
         M, Np, d = y.shape
 
-        #   1. QKV 投影  
-        q = self.WQ(y)                            # (M, Np, d) 复数
-        k = self.WK(y)                            # (M, Np, d) 复数
-        v = self.WV(y)                            # (M, Np, d) 复数
+        #   1. QKV 投影:一次矩阵乘得到 (M, Np, 3d),沿最后一维三等分为 q | k | v
+        #      (前向数学与三个独立矩阵完全相同,区别只在初始化的方差)
+        qkv = self.WQKV(y)                        # (M, Np, 3d) 复数
+        q, k, v = jnp.split(qkv, 3, axis=-1)      # 各 (M, Np, d) 复数
 
         #   2. 拆成 h 个头:(M, Np, d) → (M, Np, h, dk) → (M, h, Np, dk)  
         q = q.reshape(M, Np, self.h, self.dk).transpose(0, 2, 1, 3)
@@ -458,13 +461,13 @@ if __name__ == '__main__':
     # 初始化自检 2:模型内每一层
     #   - 全部偏置为零;
     #   - 每层 E|W|² 与期望值之比(小矩阵涨落大,只做宽松检查 0.5~1.5,主要看打印):
-    #       embed/ff1/ff2 → 1e-4;WQ/WK/WV/WO → 1/d
+    #       embed/ff1/ff2 → 1e-4;WQKV (d,3d) → 1/(2d);WO (d,d) → 1/d
     # ------------------------------------------------------------------
     print(f"\n[初始化自检 2] 模型各层(d={d},NL={NL})")
     layers = [("embed", model.embed, 0.01 ** 2)]
     for i, blk in enumerate(model.blocks):
-        for nm in ("WQ", "WK", "WV", "WO"):
-            layers.append((f"block{i}.{nm}", getattr(blk.attn, nm), 1.0 / d))
+        layers.append((f"block{i}.WQKV", blk.attn.WQKV, 1.0 / (2 * d)))
+        layers.append((f"block{i}.WO", blk.attn.WO, 1.0 / d))
         layers.append((f"block{i}.ff1", blk.ff1, 0.01 ** 2))
         layers.append((f"block{i}.ff2", blk.ff2, 0.01 ** 2))
     for nm, lyr, var_exp in layers:
