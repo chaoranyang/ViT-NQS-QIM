@@ -33,6 +33,9 @@ main_training.py —— 子空间扩展 + ViT 前向 + 截断 + SR 更新的主�
     python main_training.py 1            种子 1
     python main_training.py 0 30         种子 0,正式训练只跑前 30 轮(冒烟测试;预训练仍跑满 N_PRE 轮;
                                          lr/λ 调度仍按 train.max_iter)
+    python main_training.py 0 1000 512   种子 0,跑满 1000 轮,正式训练子空间 NS = 512
+                                         (第 3 个参数为 NS;不传则用 hyperpara 的 train.NS。参数按位置读取,
+                                          要传 NS 时前两个参数也得写上;hyperpara.py 不改,工作区保持干净,log 不带 -dirty)
 """
 
 import sys
@@ -46,7 +49,7 @@ from flax import nnx
 import time
 
 from hyperpara import physics, net, train, L, Np, NL
-from config import ini_config, encode_NO          # 构型初始化(活性窗口)与图片编码
+from config import ini_config, encode_NO, K_WINDOW   # 构型初始化(活性窗口)与图片编码
 from ham_NO import get_conn as _get_conn_raw      # 邻居查询(扩展/补邻用)
 #from ham_NO import H_act_on
 from functools import lru_cache
@@ -54,7 +57,7 @@ from vit_complex import ViTNQS                    # 复数版 ViT
 from sr_jvp import sr_update, SrOps               # 复数 SR 更新
 from func_timer import Timers
 from diag_split import SplitDiagnostics           # 误差分解诊断(只读)
-from pre_training import pre_train                # 预训练(小 NS 上的子空间扩展 + SR)
+from pre_training import pre_train, NS_PRE, N_PRE  # 预训练(小 NS 上的子空间扩展 + SR)
 
 @lru_cache(maxsize=20000)  # 后期邻居变动小，命中缓存以加速
 def get_conn(s):
@@ -62,7 +65,6 @@ def get_conn(s):
 
 No = physics.No
 Nb = physics.Nb
-NS = train.NS
 E_REF = -25.761016092729
 #E_REF = -6.6758543768
 
@@ -74,6 +76,10 @@ SEED = int(sys.argv[1]) if len(sys.argv) > 1 else 0
 # 实际运行轮数:可从命令行第 2 个参数传入,用于冒烟测试提前停止;
 # lr / λ 的线性调度仍按 train.max_iter 计算,所以提前停止不改变前若干轮的轨迹
 N_ITER = min(int(sys.argv[2]), train.max_iter) if len(sys.argv) > 2 else train.max_iter
+# 正式训练的子空间大小:可从命令行第 3 个参数传入(如 512、1024),不传则用 hyperpara 的 train.NS。
+# 论文 Fig. 2(a) 的三个 NS 是同一套配置下的三次运行,所以 NS 当作运行参数(和 SEED 一样),hyperpara.py 不改。
+NS = int(sys.argv[3]) if len(sys.argv) > 3 else train.NS
+NS_FROM_CLI = len(sys.argv) > 3            # 只用于打印配置时标注来源
 
 
 # ====================================================================
@@ -86,7 +92,7 @@ def subspace_iteration(model, S, NS_t, it, ops, timers, tag="iter"):
     参数:
         model  : 当前网络
         S      : 本轮的子空间 S_t(大整数列表)
-        NS_t   : 截断保留的构型数(预训练用 NS_PRE,正式训练用 train.NS)
+        NS_t   : 截断保留的构型数(预训练用 NS_PRE,正式训练用 NS)
         it     : 轮数(sr_update 据此计算 lr / λ 的线性调度)
         ops    : SrOps 预编译算子
         timers : 计时器
@@ -209,6 +215,14 @@ def run_training():
     start_time = time.perf_counter()
     # ---- 误差分解诊断器:放在最前面,此后的全部 print(含预训练段)同时写进 logs/ 下的 log 文件 ----
     diag = SplitDiagnostics(NS, SEED, train.max_iter, N_ITER, E_REF)
+    # ---- 本次运行生效的全部配置(写进 log 开头,便于事后核对,不必再靠 commit 号去查 hyperpara.py)----
+    print(f"[配置] physics: No={physics.No}, Nb={physics.Nb}, t={physics.t}, U={physics.U}, "
+          f"J={physics.J}, V={physics.V}, mu={physics.mu}")
+    print(f"[配置] net:     d={net.d}, h={net.h}, Nl={net.Nl}")
+    print(f"[配置] train:   NS={NS}({'命令行' if NS_FROM_CLI else 'hyperpara'}),max_iter={train.max_iter}, "
+          f"lr {train.lr_init}→{train.lr_final}, λ {train.diag_shift_init}→{train.diag_shift_final}")
+    print(f"[配置] 运行:    SEED={SEED}, N_ITER={N_ITER};预训练 NS_PRE={NS_PRE}, N_PRE={N_PRE};"
+          f"窗口 K_WINDOW={K_WINDOW}")
 
     # ---- 0. 初始化 ViT 模型 ----
     model = ViTNQS(d=net.d, h=net.h, Nl=net.Nl, Np=Np, NL=NL, rngs=nnx.Rngs(SEED))
@@ -231,9 +245,10 @@ def run_training():
     ops.last_delta = np.zeros(ops.P)
 
     # ---- 0.3 正式训练的初始子空间 ----
-    # S 初始为 ini_config():活性窗口小体系精确基态的 top-NS(见 config.py)。
+    # S 初始为 ini_config(NS):活性窗口小体系精确基态的 top-NS(见 config.py)。
+    # 必须显式传 NS:不传时 config 会用 hyperpara 的 train.NS,命令行给的 NS 就不生效了。
     # 网络沿用预训练后的参数,第一次截断由预训练过的网络决定。
-    S = ini_config()
+    S = ini_config(NS)
     # ---- S0 体检:打印 S0 中构型对角能量 ⟨s|H|s⟩ 的 min/中位/max(不是 rel_err)----
     from ham_NO import H_act_on
     diags = sorted(H_act_on(s)[s] for s in S)

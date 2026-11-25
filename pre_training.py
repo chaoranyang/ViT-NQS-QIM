@@ -14,12 +14,12 @@ pre_training.py —— 预训练:在小子空间上先用子空间扩展 + SR �
       (本文件不 import main_training,避免循环导入);
     · lr / λ 调度:直接用 hyperpara 标准调度的前 N_PRE 轮(sr_update 按轮数 it 计算),
       即 lr、λ 都从 0.1 线性降到约 0.07,不新增任何调度参数;
-    · 结束后只把网络参数交给正式训练;正式训练的子空间重新取 ini_config(train.NS),调度从第 0 轮重新开始。
+    · 结束后只把网络参数交给正式训练;正式训练的子空间重新取 ini_config(NS)(NS 为正式训练的子空间大小,可由命令行传入),调度从第 0 轮重新开始。
 
 不采用的方案 b(对精确态做监督拟合):见 pretrain_fidelity_old.py 文件头,fidelity + Adam 会塌缩。
 
 运行参数(不是作者配置,故不放进 hyperpara.py):
-    NS_PRE = 64     预训练子空间大小(< train.NS)
+    NS_PRE = 64     预训练子空间大小(小于正式训练的 NS)
     N_PRE  = 300    预训练轮数;设为 0 即跳过预训练
 
 本文件不单独运行,由 main_training.py 调用。
