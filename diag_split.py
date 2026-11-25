@@ -27,7 +27,11 @@ diag_split.py —— 误差分解诊断(只读,不参与训练的任何计算)
 
 三、保存
     logs/train_NS{NS}_seed{SEED}_{commit}.log   终端全部输出(含 SR 监控、子空间动态),逐行实时写入
-    logs/train_NS{NS}_seed{SEED}_{commit}.npz   画图与误差分析用的逐轮指标:E、rel_err、T1、T2、T3、F_S、E_U
+    logs/train_NS{NS}_seed{SEED}_{commit}.npz   画图与误差分析用的逐轮指标:E、rel_err、T1、T2、T3、F_S、E_U;
+                                                 另存最近一次诊断时 S 内的构型概率分布(画 Fig. 2(a) 子图用):
+                                                   p_last    : P_θ(s) = |ψ(s)|²/Σ_S|ψ|²,从大到小排序,长度 NS
+                                                   c2_last   : S 内精确基态的 |c_S(s)|²,从大到小排序(对照)
+                                                   p_last_iter: 这组概率对应的轮数(跑完时 = 末轮;中途被停时为最近一次)
     commit 为当前 git 版本号;后缀 -dirty 表示运行时有未提交的改动;
     同名文件已存在时文件名追加运行时间,绝不覆盖旧结果。两类文件均被 git 忽略,只存在本机。
 
@@ -258,6 +262,10 @@ class SplitDiagnostics:
         self.last_E_S = np.nan         # 末轮 E_S、Re L,用于求 r_L
         self.last_L_re = np.nan
         self.last_E_ex_S = np.nan
+        # 最近一次诊断时 S 内的概率分布(从大到小排序),画 Fig. 2(a) 子图用;随 npz 定期存盘
+        self.p_last = None
+        self.c2_last = None
+        self.p_last_iter = -1
         self.n_done = 0
         # 从这里开始,终端输出同时写进 log
         self._tee = _Tee(sys.stdout, self.base + ".log")
@@ -286,6 +294,11 @@ class SplitDiagnostics:
                 terms["T1"], terms["T2"], terms["T3"])
             self.rec["F_S"][it] = F_S
             self.last_E_S, self.last_L_re, self.last_E_ex_S = info["E_S"], info["L_re"], E_ex_S
+            # 概率分布快照:网络的 P_θ(s) 与 S 内精确基态的 |c_S|²,各自从大到小排序
+            # (只为画概率–排序图;两者各自排序,不要求同一名次是同一个构型)
+            self.p_last = np.sort(np.asarray(info["p"]))[::-1]
+            self.c2_last = np.sort(np.abs(c_S) ** 2 / np.sum(np.abs(c_S) ** 2))[::-1]
+            self.p_last_iter = it
             # 正确性检查:只打印警告,不中断训练
             chk = []
             if terms["identity_err"] > 1e-9:
@@ -349,6 +362,8 @@ class SplitDiagnostics:
         out = dict(self.rec, iters=np.arange(self.max_iter), n_done=self.n_done,
                    NS=self.NS, SEED=self.seed, commit=self.commit, E_REF=self.E_REF,
                    DIAG_EVERY=self.diag_every, EU_EVERY=EU_EVERY)
+        if self.p_last is not None:
+            out.update(p_last=self.p_last, c2_last=self.c2_last, p_last_iter=self.p_last_iter)
         if extra:
             out.update(extra)
         np.savez(self.base + ".npz", **out)
