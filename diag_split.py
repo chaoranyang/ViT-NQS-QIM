@@ -360,7 +360,7 @@ class SplitDiagnostics:
 def self_test(NS, E_REF=-25.761016092729, tol=1e-10):
     """
     精确向量代入:
-        取 S = ini_config(NS),U = S ∪ N(S),在 U 上精确对角化得基态 c_U 与能量 E_ex(U)。
+        取 S = ini_config_BFS(NS)(旧 BFS 版,保持与调试日志第 32 项记录的自检数值一致),U = S ∪ N(S),在 U 上精确对角化得基态 c_U 与能量 E_ex(U)。
         令 logψ = log c_U(复数对数:c<0 的分量自动得到相位 π,即费米子符号)。
         S 中每个构型的全部邻居都在 U 内,而 H_UU c_U = E_ex(U) c_U,所以对每个 s ∈ S:
             E_loc(s) = Σ_{s'} H_{ss'} c(s') / c(s) = (H_UU c_U)(s) / c(s) = E_ex(U)
@@ -376,7 +376,7 @@ def self_test(NS, E_REF=-25.761016092729, tol=1e-10):
         残差 ~1e-13 被 1/c(s) 放大,这一项不要求很小,只看 E_θ(按 |c|² 加权)。
     E_θ、E_S、L 的计算与 sr_update 中的写法逐行相同(p 只在 S 内归一化)。
     """
-    from config import ini_config
+    from config import ini_config_BFS
     from sr_jvp import compute_eloc_split
 
     def check(name, ok, detail):
@@ -384,7 +384,7 @@ def self_test(NS, E_REF=-25.761016092729, tol=1e-10):
         return ok
 
     t0 = time.perf_counter()
-    S = ini_config(NS)
+    S = ini_config_BFS(NS)
     U = build_U(S)
     U_idx = {s: i for i, s in enumerate(U)}
     H_UU = build_H(U)

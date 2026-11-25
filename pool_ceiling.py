@@ -13,7 +13,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from config import ini_config
+from config import ini_config_BFS          # 本脚本测的是旧 BFS 版 S0
 from ham_NO import H_act_on, get_conn
 
 E_REF = -25.761016092729
@@ -57,7 +57,7 @@ def pool_ground_state(S0):
 if __name__ == "__main__":
     rng = np.random.default_rng(0)
     for NS in (256, 512, 1024):
-        S0 = ini_config(NS)                      # 用 BFS 版(无参数)
+        S0 = ini_config_BFS(NS)                  # 旧 BFS 版 S0(无参数)
         pool, c2, E_pool = pool_ground_state(S0)
         order = np.argsort(-c2)
 

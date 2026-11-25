@@ -2,9 +2,13 @@
 config.py —— 构型生成 与 构型 → 图片编码(链几何 / NO 几何)
 
 本文件包含:
-    1. ini_config()     : 生成 S0 = 4 个 NO 参考构型 + 连通层 BFS 填充(大整数)。
-                          依赖 NO 基的 site_no 约定和 ham_NO.get_conn,只适用于 NO 几何。
-       ini_config_rand(): 旧版均匀随机半满采样,只操作物理位串,两种几何通用。
+    1. ini_config()     : 生成 S0 = 活性窗口小体系精确基态的 top-NS(主训练与预训练都用它)。
+                          在杂质附近的活性窗口内精确对角化,深层 bath 格点冻结在参考占据,
+                          按 |c|² 取前 NS 个构型。窗口大小由模块常量 K_WINDOW 决定。
+       ini_config_BFS() : 旧版 S0 = 4 个 NO 参考构型 + 连通层 BFS 填充(大整数),
+                          保留给旧的离线测试脚本(pool_ceiling.py、s0_window.py、diag_split.py 自检)。
+                          两者都依赖 NO 基的 site_no 约定和 ham_NO,只适用于 NO 几何。
+       ini_config_rand(): 更早的均匀随机半满采样,只操作物理位串,两种几何通用。
     2. encode_chain(): 链几何编码 —— 纯切块(α-major 布局下不需要 transpose)。
                       保留用于 VMC 基线对照与调试。
     3. encode_NO()   : NO 几何编码 —— 列重排 + 空穴翻转(论文 Fig.1(a) 的图片)。
@@ -19,7 +23,11 @@ config.py —— 构型生成 与 构型 → 图片编码(链几何 / NO 几何)
 
 import math
 import random
+import itertools
+from functools import lru_cache
 import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 
 from hyperpara import physics, train, L, Np, NL
 from ham_NO import index, get_conn,H_act_on
@@ -92,8 +100,8 @@ def _reference_configs():
             refs.append(s)
     return refs
 
-def ini_config(NS=None):
-    """S0:参考构型 + 连通层 BFS 填充(取代原"均匀随机半满"采样)。
+def ini_config_BFS(NS=None):
+    """旧版 S0:参考构型 + 连通层 BFS 填充(已被 ini_config 的活性窗口版取代,只供旧测试脚本使用)。
     动机:子空间扩展法依赖"概率支撑集中在参考构型邻域"这一 NO 基物理
     (论文 Fig.1(a))。从均匀随机半满构型出发,Nb=39 时早期 SR 步长因
     E_loc 涨落过大而发散;从参考邻域出发,E_loc 涨落从一开始就是物理量级。
@@ -124,190 +132,124 @@ def ini_config(NS=None):
         frontier = nxt
     return S[:NS]
 
-# def ini_config(NS=None, seed=42, restart_every=126):
-#     """S0 = 参考核心 + 构型图随机游走(受控探索)。
+# ====================================================================
+# 1b. 活性窗口小体系精确基态 → S0(ini_config,主训练与预训练都用它)
+# ====================================================================
+# 窗口大小:每条链放开的格点数 k(不是作者给出的配置,故不放进 hyperpara.py)。
+# 离线测量(s0_window.py,调试日志第 2 节):k = 4 时 top-256 / 512 / 1024 的 T₁ 为 BFS 的 0.90 / 0.85 / 1.00 倍,
+# 窗口自身的能量下限 E_W − E_REF = 2.42e-5;k ≤ 3 时窗口下限过高或维数不足。
+K_WINDOW = 4
 
-#     动机(与论文 Fig.2(a) 的初始误差对照):
-#       - 纯 BFS 壳填充太"规整/封闭":ψ 学会把概率集中到前几壳后,
-#         截断永远选出同一批构型,子空间冻结(实测 保留=256/256,
-#         |Se| 恒定),新构型无法进入,NS 增大不带来收益;
-#       - 纯均匀随机半满太"散",早期 E_loc 涨落大(旧版发散教训);
-#       - 折中:从 4 个参考构型出发做图上随机游走,每步从 get_conn
-#         邻居里随机跳一步,每 restart_every 步从随机参考构型重新出发。
-#         得到一张穿过构型空间的"蛛网":物理核心被锚定,同时保留
-#         探索通道,给截断动力学留出换血空间。
-#       - 论文初始 rel_err ≈ 1.05e-1,略高于我们纯 BFS 的 9.93e-2:
-#         "更随机的 S0 → 初始能量略高"与此一致。
 
-#     参数:
-#         NS            : 子空间大小
-#         seed          : 随机游走种子(可复现)
-#         restart_every : 从参考构型重新出发的间隔步数(越小越散)
-#     """
-#     if NS is None:
-#         NS = train.NS
-#     max_dim = math.comb(L, L // 2)
-#     assert NS <= max_dim, (
-#         f"NS={NS} 超过半满扇区总维度 C({L},{L//2})={max_dim}!"
-#     )
-#     from ham_NO import get_conn
-#     refs = _reference_configs()
-#     rng = random.Random(seed)               # 局部随机实例,不扰动全局种子
-#     S, seen = [], set()
-#     for r in refs:                          # 参考核心:锚定物理,永不去除
-#         S.append(r)
-#         seen.add(r)
+def window_sites(k):
+    """
+    一个自旋块内的活性 site_no 与冻结占据的 site_no(NO 几何,约定见 ham_NO.py 文件头):
+        site 0 = 杂质,1 = |b⟩,2..NL = v 链(v₁ = site 2,向外 +1),NL+1..Nb = d 链(d₁ = site NL+1,向外 +1)。
+    活性格点 = {杂质, b, v₁..v_k, d₁..d_k},每块 2 + 2k 个;
+    冻结格点 = v_{k+1}..v_NV 恒占据(深层价带"死"满),d_{k+1}..d_ND 恒空(深层导带"死"空)。
+    """
+    from ham_NO import NV, ND
+    v_sites = [1 + j for j in range(1, NV + 1)]          # v₁..v_NV = site 2..NL
+    d_sites = [NL + j for j in range(1, ND + 1)]         # d₁..d_ND = site NL+1..Nb
+    active = [0, 1] + v_sites[:k] + d_sites[:k]
+    frozen_occ = v_sites[k:]                             # 深层价带:恒占据
+    return active, frozen_occ
 
-#     cur = rng.choice(refs)
-#     steps_since_restart = 0
-#     max_steps = 50 * NS                     # 安全阀:防止极端情况下空转
-#     it = 0
-#     while len(S) < NS and it < max_steps:
-#         it += 1
-#         if steps_since_restart >= restart_every:
-#             cur = rng.choice(refs)
-#             steps_since_restart = 0
-#         nbrs = get_conn(cur)
-#         if not nbrs:                        # 理论上有邻居;防御性兜底
-#             cur = rng.choice(refs)
-#             steps_since_restart = 0
-#             continue
-#         cur = rng.choice(nbrs)              # 随机跳一步
-#         steps_since_restart += 1
-#         if cur not in seen:
-#             seen.add(cur)
-#             S.append(cur)
-#     return S
 
-# def ini_config(NS=None, max_dist=2):
-#     """S0 = 按微扰振幅排序取前 NS 个构型（替代 BFS / 随机游走）。
+def enumerate_window(k):
+    """
+    枚举窗口内全部构型(大整数)。
+    H 不翻转自旋、守恒每个自旋块的粒子数:参考构型每块 NL 个电子,冻结的 v 链占去 NV − k 个,
+    故窗口内每块恰有 k + 1 个电子,窗口维数 = C(2+2k, k+1)^(2·No)
+    (单轨道:k = 1/2/3/4 → 36 / 400 / 4900 / 63504)。
+    """
+    assert No == 1, "活性窗口按单轨道写(两个自旋块);多轨道需把自旋块循环扩展到 (m, sigma)"
+    active, frozen_occ = window_sites(k)
+    n_el = k + 1
+    blocks = []                                          # blocks[i] = 一个自旋块全部可能的位串
+    for sigma in (1, 0):                                 # 1 = ↑,0 = ↓(与 ham_NO 一致)
+        base = 0
+        for site in frozen_occ:
+            base |= 1 << index(0, sigma, site)
+        pats = []
+        for occ in itertools.combinations(active, n_el):
+            s = base
+            for site in occ:
+                s |= 1 << index(0, sigma, site)
+            pats.append(s)
+        blocks.append(pats)
+    return [a | b for a in blocks[0] for b in blocks[1]]
 
-#     ── 为什么换 ─────────────────────────────────────────────
-#     子空间扩展协议满足 S_{t+1} ⊂ N(S_t)（Eq.3），即 S 每步只能移动一跳。
-#     实测换血率 r = |S_{t+1}\\S_t| ≈ 1 个构型/轮（日志中"保留 255~256/256"），
-#     因此完全替换 S 需要 ≈ NS 步：
-#         NS=256  → ~256 步（1000 步够用，观测到 ~400 轮进入平台）
-#         NS=512  → ~512 步（紧张）
-#         NS=1024 → ~1024 步（>1000，实测到 1000 轮仍在下降、从未进平台）
-#     同时 |Se|/NS 从 7.4 坍缩到 2.57，S 收缩成团簇，探索带只剩几百个构型，
-#     每步只用掉 1 个 → 死锁。这说明本协议没有"发现"能力，只有"确认"能力。
 
-#     既然三条曲线都在 ~400 轮进平台且差一个数量级，"发现"不可能发生在训练中，
-#     只能是 S0 本身就已经是真基态 top-NS 的好估计。故本函数的目标不是
-#     "参考构型附近的连通壳"，而是"按 |ψ_GS(s)|² 从大到小取前 NS 个"。
+def project_H(cfgs):
+    """
+    H 投影到构型集上(只保留两端都在集合内的矩阵元),返回对称化的稀疏矩阵。
+    窗口内构型跳出窗口的项按投影丢弃;冻结格点的对角能 h_NO[s,s]·n_s 仍由 H_act_on 计入。
+    H_act_on(s) = {s': <s'|H|s>},故放在 H[s', s]。
+    """
+    idx = {s: i for i, s in enumerate(cfgs)}
+    rows, cols, vals = [], [], []
+    for s in cfgs:
+        i = idx[s]
+        for sp_, h in H_act_on(s).items():
+            j = idx.get(sp_)
+            if j is not None:
+                rows.append(j); cols.append(i); vals.append(h)
+    n = len(cfgs)
+    H = sp.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsr()
+    return 0.5 * (H + H.T)
 
-#     ── 如何估计 |ψ_GS(s)| ───────────────────────────────────
-#     以 4 个参考构型为 0 阶态做 Rayleigh-Schrödinger 微扰展开。对从参考 r
-#     经 k 跳到达的构型 s：
-#         c_s ≈ Σ_paths  Π_{j=1..k}  H_{j-1,j} / (E_r − E_j)
-#     其中 E_j = <j|H|j> 是对角能量，取自 H_act_on(s)[s]。
-#     展开到 2 跳（max_dist=2），覆盖：
-#         k=0  参考构型本身
-#         k=1  杂质/价带电子搬到活性位 b 的单激发
-#         k=2  价带空穴 + 导带电子的单粒子-空穴对（论文 Fig.1 的泄露构型）
-#     该估计天然包含"越远离杂质泄露越少"：每跳贡献一个 hopping 矩阵元与一个
-#     能量分母，沿链传播时振幅按 (t/Δ)^k 指数衰减，无需人为衰减指数。
 
-#     ── 已知局限 ─────────────────────────────────────────────
-#     · 近简并时能量分母趋零，微扰失效（本函数用 den_floor 跳过这类路径）；
-#     · 强关联（大 U）时单参考微扰可能低估多对激发，可能需要在 max_dist=4
-#       或显式考虑杂质双占/双空的联合激发；
-#     · 这些都是"排序准不准"的问题，而非"能不能算"的问题——请用一次
-#       子空间 ED（ΔE_sub(S0)）来验证，而不是凭先验相信它。
+def lowest_eig(H):
+    """最低本征值与本征向量:小矩阵稠密对角化,大矩阵 eigsh(固定初值,可复现)。"""
+    n = H.shape[0]
+    if n <= 3000:
+        w, v = np.linalg.eigh(H.toarray())
+        return float(w[0]), v[:, 0]
+    v0 = np.random.default_rng(0).standard_normal(n)
+    w, v = spla.eigsh(H, k=1, which="SA", v0=v0, tol=1e-12, maxiter=100000)
+    return float(w[0]), v[:, 0]
 
-#     参数:
-#         NS        : 子空间大小
-#         max_dist  : 微扰展开的最大跳跃数（2 足以给 NS≤1024 提供候选）
-#     返回:
-#         长度 NS 的大整数构型列表，按 |c_s| 从大到小排序（参考构型恒在首位）
-#     """
-#     if NS is None:
-#         NS = train.NS
 
-#     from ham_NO import H_act_on, get_conn
+@lru_cache(maxsize=None)
+def window_ground_state(k):
+    """
+    窗口 k 的精确基态(带缓存:同一次运行里预训练与正式训练共用,只算一次;k = 4 约 4 s)。
+    返回 (cfgs_sorted, c2_sorted, E_W):按 |c|² 从大到小排好的构型元组、对应的 |c|²(已归一化)、窗口基态能量。
+    排序用稳定排序:|c|² 简并的构型保持枚举顺序,结果可复现。
+    """
+    cfgs = enumerate_window(k)
+    E_W, c = lowest_eig(project_H(cfgs))
+    c2 = np.abs(c) ** 2
+    c2 /= c2.sum()
+    order = np.argsort(-c2, kind="stable")
+    return tuple(cfgs[i] for i in order), c2[order], E_W
 
-#     refs = _reference_configs()
-#     den_floor = 1e-6          # 能量分母下限：|E_r − E_s| 小于此值视为简并，跳过该路径
 
-#     # ---- 1. 缓存 H_act_on：每个构型只查一次 ----
-#     # 微扰展开会反复用到同一批构型的对角能量和跳跃矩阵元，
-#     # 而 H_act_on 是 CPU 串行构造字典（约 1 ms/次），重复调用很贵。
-#     cache = {}
+def ini_config(NS=None, k=None):
+    """
+    S0 = 活性窗口小体系精确基态的 top-NS(主训练与预训练的子空间初始化都用它)。
 
-#     def conn_of(s):
-#         d = cache.get(s)
-#         if d is None:
-#             d = H_act_on(s)
-#             cache[s] = d
-#         return d
+    物理图像:NO 基下基态的密度涨落集中在杂质及其近邻,深层 bath 格点几乎"死"
+    (价带深处全满、导带深处全空)。只放开杂质附近的窗口精确对角化,得到的 |c|² 是
+    有物理依据的构型重要性排序;取前 NS 个(补上冻结的深层格点)作为初始子空间。
+    与 BFS 版的区别:BFS 只按"离参考构型的跳数"分层,层内顺序有系统偏差,不按振幅排序。
 
-#     # ---- 2. 以每个参考构型为 0 阶态，展开到 max_dist 跳 ----
-#     # ampl[s] 保存各路径、各参考构型给出的最大 |c_s|，仅作为排序分数使用。
-#     ampl = {}
-
-#     for r in refs:
-#         d_r = conn_of(r)
-#         E_r = d_r[r]                     # 参考构型的对角能量
-#         ampl[r] = 1.0                    # 0 阶：参考构型本身，振幅最大
-
-#         # ---- 第 1 跳：一阶微扰 c1 = H_{r,s1} / (E_r − E_s1) ----
-#         for s1, h1 in d_r.items():
-#             if s1 == r:
-#                 continue
-#             d1 = conn_of(s1)
-#             E1 = d1[s1]
-#             den1 = E_r - E1
-#             if abs(den1) < den_floor:
-#                 continue                 # 近简并，微扰不适用
-#             c1 = abs(h1 / den1)
-#             if ampl.get(s1, -1.0) < c1:
-#                 ampl[s1] = c1
-
-#             if max_dist < 2:
-#                 continue
-
-#             # ---- 第 2 跳：二阶微扰 c2 = H_{r,s1}·H_{s1,s2} / [(E_r−E_s1)(E_r−E_s2)] ----
-#             # 典型产物：价带挖一个空穴 + 导带补一个电子（经活性位 b 中转）
-#             for s2, h2 in d1.items():
-#                 if s2 == r or s2 == s1:
-#                     continue
-#                 E2 = conn_of(s2)[s2]
-#                 den2 = E_r - E2
-#                 if abs(den2) < den_floor:
-#                     continue
-#                 c2 = abs(h1 * h2 / (den1 * den2))
-#                 if ampl.get(s2, -1.0) < c2:
-#                     ampl[s2] = c2
-
-#     # ---- 3. 按振幅降序取前 NS 个 ----
-#     # 参考构型振幅为 1，恒排在最前，不会被截掉。
-#     ranked = sorted(ampl.items(), key=lambda kv: -kv[1])
-#     S = [s for s, _ in ranked[:NS]]
-
-#     # ---- 4. 兜底：候选不足时按图距离 BFS 补齐 ----
-#     # 仅在 NS 超过 max_dist=2 能覆盖的构型数时触发（NS=256/512 通常不会）。
-#     if len(S) < NS:
-#         seen = set(ampl)
-#         frontier = list(S)
-#         while frontier and len(S) < NS:
-#             nxt = []
-#             for s in frontier:
-#                 for sp in get_conn(s):
-#                     if sp not in seen:
-#                         seen.add(sp)
-#                         nxt.append(sp)
-#                         S.append(sp)
-#                         if len(S) >= NS:
-#                             break
-#                 if len(S) >= NS:
-#                     break
-#             frontier = nxt
-
-#     # ---- 5. 统计打印：确认候选数与振幅衰减形状 ----
-#     print(f"[S0] 微扰候选 {len(ampl)} 个，取前 {NS} 个；"
-#           f"振幅范围 [{ranked[min(NS, len(ranked))-1][1]:.3e}, {ranked[0][1]:.3e}]")
-#     return S
-
+    参数:
+        NS : 子空间大小,默认取 hyperpara.train.NS
+        k  : 窗口大小(每条链放开的格点数),默认取模块常量 K_WINDOW
+    返回:
+        list[int],NS 个构型,按窗口基态 |c|² 从大到小排列
+    """
+    if NS is None:
+        NS = train.NS
+    if k is None:
+        k = K_WINDOW
+    cfgs, c2, E_W = window_ground_state(k)
+    assert NS <= len(cfgs), (
+        f"NS={NS} 超过窗口 k={k} 的维数 {len(cfgs)},请增大 K_WINDOW"
+    )
+    return list(cfgs[:NS])
 
 
 # ====================================================================
