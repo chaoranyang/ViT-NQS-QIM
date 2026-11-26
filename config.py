@@ -156,6 +156,32 @@ def window_sites(k):
     return active, frozen_occ
 
 
+@lru_cache(maxsize=None)
+def _depth_bits():
+    """excitation_depth 用的位掩码(只算一次):_V[σ][j-1] = v_j 的位,_D[σ][j-1] = d_j 的位。"""
+    from ham_NO import NV, ND
+    V = tuple(tuple(1 << index(0, sigma, 1 + j) for j in range(1, NV + 1)) for sigma in (1, 0))
+    D = tuple(tuple(1 << index(0, sigma, NL + j) for j in range(1, ND + 1)) for sigma in (1, 0))
+    return V, D
+
+
+def excitation_depth(s):
+    """
+    构型 s 的激发深度:两个自旋块中"v_j 空出 或 d_j 占据"的最大链格点编号 j;没有这类激发则为 0。
+    物理含义:参考占据是 v 链全满、d 链全空,深度 = 这个构型动到了离杂质多远的格点。
+    depth ≤ k ⇔ s 落在窗口 k 内(冻结格点都保持参考占据);depth > K_WINDOW 即"窗口外构型"。
+    (reach_offline.py 与 diag_split.py 共用;单轨道写法,同 enumerate_window。)
+    """
+    V, D = _depth_bits()
+    depth = 0
+    for vb, db in zip(V, D):
+        for j in range(len(vb), depth, -1):        # 从最深处往回找,找到即停
+            if not (s & vb[j - 1]) or (s & db[j - 1]):
+                depth = j
+                break
+    return depth
+
+
 def enumerate_window(k):
     """
     枚举窗口内全部构型(大整数)。

@@ -160,11 +160,102 @@ def rayleigh_U(S, Se_idx, logpsi_all, get_conn_fn=get_conn):
 
 def exact_U(H_UU):
     """E_ex(U):H_UU 的最低本征值(稀疏迭代求解,|U| 可达数千)。"""
+    return ground_U(H_UU, vectors=False)[0]
+
+
+def ground_U(H_UU, vectors=True):
+    """H_UU 的基态:返回 (E_ex(U), c_U);vectors=False 时 c_U 为 None。固定初值 → 可复现。"""
     n = H_UU.shape[0]
-    v0 = np.random.default_rng(0).standard_normal(n)   # 固定初值 → 可复现
+    v0 = np.random.default_rng(0).standard_normal(n)
+    if vectors:
+        w, v = spla.eigsh(H_UU, k=1, which="SA", v0=v0, tol=1e-12, maxiter=50000)
+        return float(w[0]), v[:, 0]
     w = spla.eigsh(H_UU, k=1, which="SA", v0=v0, tol=1e-12, maxiter=50000,
                    return_eigenvectors=False)
-    return float(w[0])
+    return float(w[0]), None
+
+
+# ====================================================================
+# 3b. 窗口外构型诊断:网络振幅 vs U 上精确振幅(调试日志第 6 节第 8 条,第 2 步)
+# ====================================================================
+def window_stats(S, U, H_UU, Se_idx, logpsi_all, NS, E_REF, k_window):
+    """
+    回答"窗口外构型进不来,是不是因为网络低估了它们的振幅"(假设 H1)。
+
+    参照物:c_U = H 投影到 U = S ∪ N(S) 上的精确基态(即 reach_offline.py 里"完美网络"给的振幅)。
+    两套振幅都只在 S 上归一化(子空间扩展截断时比较的正是 |ψ(s′)|² 与 S 内构型的相对大小):
+        p_θ(u) = |ψ_θ(u)|² / Σ_{s∈S} |ψ_θ(s)|²,   p_ex(u) = |c_U(u)|² / Σ_{s∈S} |c_U(s)|²
+    每个构型的对数振幅比
+        r(u) = ½ ln[p_θ(u) / p_ex(u)] = ln|ψ_θ(u)/c_U(u)| + 常数(常数由 S 上归一化固定)
+    r ≈ 0:网络振幅与精确一致;r < 0:网络低估。按"是否在 S、激发深度"分组取中位数。
+
+    "该进未进":按 p_ex 在 U 中排第 NS 名的门槛 thr,p_ex > thr 却不在 S 中的构型。
+        它们若振幅正确,下一次截断就应进入 S;个数、其中窗口外的个数、
+        以及它们的网络 p_θ 比网络自己的第 NS 名门槛低多少(log10),都打印出来。
+        (门槛处的简并伙伴取舍任意,所以用严格大于 thr·(1+1e-9),不计入恰好打平的构型。)
+    T₁(一步完美截断):从 U 按 p_ex 取 top-NS 的 E_exact − E_REF,即"此刻网络若排序正确,
+        子空间能立即改进到多少";H_UU 已有,取子矩阵稠密对角化,不再调用 H_act_on。
+
+    返回:
+        stats : dict,标量汇总(打印 + 写进 npz 的逐轮记录)
+        snap  : dict,逐构型数组(depth、r、是否在 S、p_ex、p_θ),末次存进 npz 供画散点图
+    """
+    from config import excitation_depth
+    lp = np.asarray(logpsi_all, dtype=np.complex128)[[Se_idx[u] for u in U]]
+    _, c = ground_U(H_UU)
+    S_set = set(S)
+    inS = np.array([u in S_set for u in U])
+    depth = np.array([excitation_depth(u) for u in U])
+
+    # ---- 两套概率,都在 S 上归一化(对数形式,避免下溢)----
+    def log_norm_on_S(logp):
+        m = np.max(logp[inS])
+        return logp - (m + np.log(np.sum(np.exp(logp[inS] - m))))
+    logp_net = log_norm_on_S(2.0 * lp.real)
+    c2 = np.abs(c) ** 2
+    valid = c2 > 1e-30 * c2.max()            # 精确振幅为 0(对称性禁戒)的构型不参与振幅比
+    logp_ex = np.full(len(U), -np.inf)
+    logp_ex[valid] = np.log(c2[valid])
+    logp_ex = log_norm_on_S(logp_ex)
+    r = np.where(valid, 0.5 * (logp_net - logp_ex), np.nan)
+
+    # ---- 该进未进 ----
+    order_ex = np.argsort(-logp_ex, kind="stable")
+    thr = logp_ex[order_ex[NS - 1]]                         # 精确排序的第 NS 名
+    blocked = (~inS) & (logp_ex > thr + 1e-9)
+    thr_net = np.sort(logp_net)[::-1][NS - 1]               # 网络排序的第 NS 名
+    out = depth > k_window
+
+    # ---- 一步完美截断的 T₁ ----
+    top = np.sort(order_ex[:NS])
+    H_top = H_UU[top][:, top].toarray()
+    T1_perf = float(np.linalg.eigvalsh(0.5 * (H_top + H_top.T))[0]) - E_REF
+
+    def med(mask):
+        x = r[mask & valid]
+        return (float(np.median(x)) if x.size else float("nan")), int(x.size)
+
+    groups = [("S 内", inS), (f"N(S) 窗口内", (~inS) & (~out))]
+    for d in range(k_window + 1, k_window + 3):
+        groups.append((f"N(S) 深度{d}", (~inS) & (depth == d)))
+    groups.append((f"N(S) 深度≥{k_window + 3}", (~inS) & (depth >= k_window + 3)))
+    groups.append(("该进未进", blocked))
+
+    stats = dict(
+        nOutS=int(np.sum(inS & out)),
+        nBlock=int(np.sum(blocked)),
+        nBlockOut=int(np.sum(blocked & out)),
+        T1_perf=T1_perf,
+        r_block=med(blocked)[0],
+        r_out=med((~inS) & out)[0],
+        r_in=med((~inS) & (~out))[0],
+        gap_block=(float(np.median(logp_net[blocked] - thr_net) / np.log(10))
+                   if blocked.any() else float("nan")),
+        groups=[(name, *med(mask)) for name, mask in groups],
+    )
+    snap = dict(depth=depth, r=r, inS=inS,
+                p_ex=np.exp(logp_ex), p_net=np.exp(logp_net))
+    return stats, snap
 
 
 # ====================================================================
@@ -250,6 +341,8 @@ class SplitDiagnostics:
     """
 
     REC_KEYS = ("E", "rel_err", "T1", "T2", "T3", "F_S", "E_U")   # 写进 npz 的逐轮指标
+    # 窗口外构型诊断(window_stats,与 E_U 同频):含义见 window_stats 的说明
+    WIN_KEYS = ("nOutS", "nBlock", "nBlockOut", "T1_perf", "r_block", "r_out", "r_in", "gap_block")
 
     def __init__(self, NS, seed, max_iter, n_iter, E_REF):
         self.NS, self.seed, self.max_iter, self.n_iter, self.E_REF = NS, seed, max_iter, n_iter, E_REF
@@ -257,7 +350,9 @@ class SplitDiagnostics:
         self.commit = git_commit_tag()
         self.base = unique_base_path(NS, seed, self.commit)
         # 逐轮记录;下标 == iteration,未计算的轮保持 nan
-        self.rec = {k: np.full(max_iter, np.nan) for k in self.REC_KEYS}
+        self.rec = {k: np.full(max_iter, np.nan) for k in self.REC_KEYS + self.WIN_KEYS}
+        self.win_snap = None           # 最近一次 window_stats 的逐构型数组,存 npz 供画散点图
+        self.win_snap_iter = -1
         self.H_UU_last = None          # 末轮的 H_UU,用于求 E_exact(U)
         self.last_E_S = np.nan         # 末轮 E_S、Re L,用于求 r_L
         self.last_L_re = np.nan
@@ -321,6 +416,21 @@ class SplitDiagnostics:
                 self.H_UU_last = H_UU
             print(f"          [E_U]  |U|={len(U_cfgs)}  E_U−E_REF={E_U - E_REF:+.4e}  "
                   f"E_U−E_S={E_U - info['E_S']:+.4e}(<0 表示 S 外分量确实让波函数变好)")
+            # 窗口外构型诊断:网络振幅 vs U 上精确振幅(复用 H_UU 与本轮 logψ,无额外前向)
+            from config import K_WINDOW
+            ws, snap = window_stats(S_next, U_cfgs, H_UU, Se_idx, logpsi_all,
+                                    self.NS, E_REF, K_WINDOW)
+            for key in self.WIN_KEYS:
+                self.rec[key][it] = ws[key]
+            self.win_snap, self.win_snap_iter = snap, it
+            T1_now = self.rec["T1"][it]
+            ratio = f"(当前 T₁ 的 {ws['T1_perf'] / T1_now:.2f} 倍)" if np.isfinite(T1_now) else ""
+            print(f"          [窗口外] S 中窗口外 {ws['nOutS']}/{self.NS}  "
+                  f"该进未进 {ws['nBlock']}(其中窗口外 {ws['nBlockOut']},"
+                  f"网络 |ψ|² 中位比门槛低 10^{-ws['gap_block']:.1f} 倍)  "
+                  f"T₁(一步完美截断)={ws['T1_perf']:.3e}{ratio}")
+            print("          [振幅比] ln|ψ_θ/c_U| 中位数(个数):" + "  ".join(
+                f"{name} {m:+.2f}({n})" for name, m, n in ws["groups"]))
 
         self.n_done = it + 1
         if self.n_done % SAVE_EVERY == 0:
@@ -364,6 +474,10 @@ class SplitDiagnostics:
                    DIAG_EVERY=self.diag_every, EU_EVERY=EU_EVERY)
         if self.p_last is not None:
             out.update(p_last=self.p_last, c2_last=self.c2_last, p_last_iter=self.p_last_iter)
+        if self.win_snap is not None:
+            # 最近一次窗口外诊断的逐构型数组(U 上每个构型一项):激发深度、对数振幅比、是否在 S、两套概率
+            out.update({f"win_{k}": v for k, v in self.win_snap.items()},
+                       win_iter=self.win_snap_iter)
         if extra:
             out.update(extra)
         np.savez(self.base + ".npz", **out)
@@ -441,6 +555,19 @@ def self_test(NS, E_REF=-25.761016092729, tol=1e-10):
                 f"|exact_U − 稠密| = {abs(E_ex_U_sparse - E_ex_U):.1e}")
     F_self = fidelity(c_S, np.log(c_S.astype(np.complex128)))
     ok &= check("(7) F_S(c_S, c_S) = 1", abs(F_self - 1.0) < 1e-12, f"1 − F = {1.0 - F_self:.1e}")
+    # (8) 窗口外诊断:ψ 取 U 上精确基态时,每个构型的振幅比 r 应为 0;
+    #     T₁(一步完美截断)应等于"按 |c_U|² 取 top-NS"直接建矩阵算出的值
+    from config import K_WINDOW
+    ws, snap = window_stats(S, U, H_UU2, U_idx, logpsi, NS, E_REF, K_WINDOW)
+    r_max = float(np.nanmax(np.abs(snap["r"])))
+    top_direct = [U[i] for i in np.argsort(-np.abs(c_U) ** 2, kind="stable")[:NS]]
+    T1_direct = float(np.linalg.eigvalsh(build_H(top_direct).toarray())[0]) - E_REF
+    ok &= check("(8) 窗口外诊断:r ≡ 0,T₁(完美截断) 一致",
+                # r 的容差 1e-4:window_stats 用 eigsh 求 c_U,|c| ~ 1e-8 的构型上迭代残差被放大到 ~1e-6;
+                # 诊断关心的是 O(1) 的 r,不受影响
+                r_max < 1e-4 and abs(ws["T1_perf"] - T1_direct) < 1e-9,
+                f"max|r| = {r_max:.1e},|ΔT₁| = {abs(ws['T1_perf'] - T1_direct):.1e},"
+                f"该进未进 {ws['nBlock']}(其中窗口外 {ws['nBlockOut']})")
 
     print(f"    [参考] max_s |E_loc(s) − E_ex(U)| = {np.max(np.abs(E_loc - E_ex_U)):.1e}"
           f"(小 |c| 构型放大残差,不作判据)")
